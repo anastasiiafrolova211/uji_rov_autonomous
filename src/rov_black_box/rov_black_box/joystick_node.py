@@ -53,7 +53,7 @@ class BlueROVJoystick(Node):
             self.initialization_test()
 
 
-# TODO do i need to add init test for gripper?
+# TODO do i need to add init test for gripper in the beginnign?
 
     def initialization_test(self):
         """
@@ -89,7 +89,7 @@ class BlueROVJoystick(Node):
         pin_number (float) --> the servo number in the navigator board
         value (float) --> The pwm value sent to the servo between 1100 and 1900
         '''
-        client = self.create_client(CommandLong, 'bluerov2/cmd/command') # updated topic name
+        client = self.create_client(CommandLong, '/bluerov2/cmd/command') # updated topic name
         
         if not client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('MAVROS service not available!')
@@ -103,7 +103,6 @@ class BlueROVJoystick(Node):
         request.param3 = 0.0             
         request.param4 = 0.0    
 
-        sleep(3)
         future = client.call_async(request)
 
         # Check the result
@@ -119,7 +118,7 @@ class BlueROVJoystick(Node):
         '''
         Arms or disarms the vehicle motors using MAVROS command 400.
         '''
-        cli = self.create_client(CommandLong, 'cmd/command')  # Create MAVROS service client
+        cli = self.create_client(CommandLong, '/bluerov2/cmd/command')  # Create MAVROS service client
         result = False
         while not result:
             result = cli.wait_for_service(timeout_sec=4.0)  # Wait for service to be available
@@ -150,6 +149,7 @@ class BlueROVJoystick(Node):
         https://bluerobotics.com/wp-content/uploads/2023/02/default-button-layout-xbox.jpg
         **Note: the lights are set to be in RT and LT button instead of the cross buttons
         '''
+        self.get_logger().info("Entered joyCallback function")
         btn_arm = data.buttons[7]  # Start button
         btn_disarm = data.buttons[6]  # Back button
         btn_manual_mode = data.buttons[3]  # Y button
@@ -174,6 +174,7 @@ class BlueROVJoystick(Node):
             self.arming = True
             self.armDisarm(True)
 
+
         # Switch manual, auto anset_moded correction mode
         if btn_manual_mode and not self.set_mode[0]:
             self.set_mode = [True, False, False]
@@ -185,6 +186,7 @@ class BlueROVJoystick(Node):
             self.set_mode = [False, False, True]
             self.get_logger().info("Mode correction")
 
+
         #### Control light intensity####
         if (btn_light_up == -1 and self.light < self.light_max):
             self.light = min(self.light + 100.0, self.light_max)
@@ -195,6 +197,7 @@ class BlueROVJoystick(Node):
             self.light = max(self.light_min,self.light - 100)
             self.send_servo_command(self.light_pin,self.light)
             self.get_logger().info(f"light PWM is: {self.light}")
+
 
         ### Control Camera tilt angle ###
         if (btn_camera_servo_up and not btn_camera_servo_down and self.tilt < self.servo_max):
