@@ -89,7 +89,7 @@ class BlueROVJoystick(Node):
         pin_number (float) --> the servo number in the navigator board
         value (float) --> The pwm value sent to the servo between 1100 and 1900
         '''
-        client = self.create_client(CommandLong, 'cmd/command')
+        client = self.create_client(CommandLong, 'bluerov2/cmd/command') # updated topic name
         
         if not client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('MAVROS service not available!')
