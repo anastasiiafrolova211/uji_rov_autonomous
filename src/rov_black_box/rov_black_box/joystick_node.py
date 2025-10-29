@@ -56,7 +56,9 @@ class BlueROVJoystick(Node):
 # TODO do i need to add init test for gripper?
 
     def initialization_test(self):
-        """Tests the light by flashing it and tests the camera servo by moving it to max/min limits before starting the sytsem."""
+        """
+        Tests the light by flashing it and tests the camera servo by moving it to max/min limits before starting the sytsem.
+        """
         self.get_logger().info("Testing light and camera servo...")
         
         # Flash the light
@@ -88,6 +90,7 @@ class BlueROVJoystick(Node):
         value (float) --> The pwm value sent to the servo between 1100 and 1900
         '''
         client = self.create_client(CommandLong, 'cmd/command')
+        
         if not client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('MAVROS service not available!')
             return
@@ -99,7 +102,8 @@ class BlueROVJoystick(Node):
         request.param2 = value         # Desired servo position (param2)
         request.param3 = 0.0             
         request.param4 = 0.0    
-        
+
+        sleep(3)
         future = client.call_async(request)
 
         # Check the result
