@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
-from mavros_msgs.srv import CommandLong
+from mavros_msgs.srv import CommandLong, MountControl
 from time import sleep
 
 class BlueROVJoystick(Node):
@@ -9,7 +9,10 @@ class BlueROVJoystick(Node):
         super().__init__('bluerov_joystick_node')
         
         self.get_logger().info('Starting BlueROV joystick')
+        # subscribtion for joystick function
         self.subscription = self.create_subscription(Joy, 'joy', self.joyCallback, 10)
+        # publish for camera tilting control
+        self.mount_pub = self.create_publisher(MountControl, 'mount_control/command', 10)
 
         # initialize variables
         self.set_mode = [True, False, False]
@@ -41,10 +44,14 @@ class BlueROVJoystick(Node):
         self.light_max = 1900.0
         
         # camera servo
-        self.tilt = 1450.0
-        self.tilt_int = 1450.0 # for keeping neutral horizontal position
-        self.servo_min = 1100.0
-        self.servo_max = 1850.0
+        # self.tilt = 1450.0
+        # self.tilt_int = 1450.0 # for keeping neutral horizontal position
+        # self.servo_min = 1100.0
+        # self.servo_max = 1850.0
+
+        # camera tilt 
+        self.tilt = 0.0
+        self.tilt_int = 0.0 # for keeping neutral horizontal position
 
         # gripper
         self.gripper = 1150.0
@@ -137,6 +144,27 @@ class BlueROVJoystick(Node):
         
         self.get_logger().info(f"{'Arming' if armed else 'Disarming'} Succeeded")
 
+
+    def send_camera_tilt_command(self, tilt_angle_deg):
+        '''
+        Publishes camera tilt angle to /bluerov2/mount_control/command (suppose)
+        tilt_angle_deg (float) --> desired tilt in degrees, try between -45 (down) and +45 (up).
+        '''
+        msg = MountControl()
+        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING
+        msg.pitch = tilt_angle_deg  # up/down tilt
+        msg.roll = 0.0 
+        msg.yaw = 0.0
+        msg.altitude = 0.0
+        msg.latitude = 0.0
+        msg.longitude = 0.0
+        msg.save_position = False
+
+        self.mount_pub.publish(msg)
+        self.get_logger().info(f"Published camera tilt angle: {tilt_angle_deg:.1f}")
+
+
+
     def joyCallback(self, data):
         ''' 
         Map the Joystick buttons according the bluerov configuration as descriped at
@@ -214,21 +242,35 @@ class BlueROVJoystick(Node):
         self.lt_was_pressed = lt_pressed
 
 
+        # ### Control Camera tilt angle ###
+        # if (btn_camera_servo_up and not btn_camera_servo_down and self.tilt < self.servo_max):
+        #     self.tilt = min(self.servo_max, self.tilt + 100)
+        #     self.send_servo_command(self.camera_servo_pin, self.tilt)
+        #     self.get_logger().info(f"tilt pwm: {self.tilt}")
+            
+        # elif (btn_camera_servo_down and self.tilt > self. servo_min):
+        #     self.tilt = max(self.servo_min, self.tilt - 100)
+        #     self.send_servo_command(self.camera_servo_pin, self.tilt)
+        #     self.get_logger().info(f"tilt pwm: {self.tilt}")
+            
+        # elif (btn_camera_rest):
+        #     self.tilt = self.tilt_int
+        #     self.send_servo_command(self.camera_servo_pin,self.tilt)
+        #     self.get_logger().info(f"Camera tilt has been reseted")
+
+
         ### Control Camera tilt angle ###
-        if (btn_camera_servo_up and not btn_camera_servo_down and self.tilt < self.servo_max):
-            self.tilt = min(self.servo_max, self.tilt + 100)
-            self.send_servo_command(self.camera_servo_pin, self.tilt)
-            self.get_logger().info(f"tilt pwm: {self.tilt}")
-            
-        elif (btn_camera_servo_down and self.tilt > self. servo_min):
-            self.tilt = max(self.servo_min, self.tilt - 100)
-            self.send_servo_command(self.camera_servo_pin, self.tilt)
-            self.get_logger().info(f"tilt pwm: {self.tilt}")
-            
-        elif (btn_camera_rest):
-            self.tilt = self.tilt_int
-            self.send_servo_command(self.camera_servo_pin,self.tilt)
-            self.get_logger().info(f"Camera tilt has been reseted")
+        if btn_camera_servo_up and not btn_camera_servo_down:
+            self.tilt = min(self.tilt + 5, 45.0)  # limit up tilt to +45
+            self.send_camera_tilt_command(self.tilt)
+        elif btn_camera_servo_down and not btn_camera_servo_up:
+            self.tilt = max(self.tilt - 5, -45.0)  # limit down tilt to -45
+            self.send_camera_tilt_command(self.tilt)
+        elif btn_camera_rest:
+            self.tilt = 0.0  # reset to horizontal
+            self.send_camera_tilt_command(self.tilt)
+            self.get_logger().info("Camera tilt has been reseted")
+
 
 
 def main(args=None):
