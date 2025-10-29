@@ -32,8 +32,7 @@ class BlueROVJoystick(Node):
         # 13 gripper
         # 14
         # 15 
-        # 16 camera tilting - does not work - bc we need to pub angle to topic -> 
-        # it is not a service /bluerov2/mount_control/command
+        # 16 camera tilting - as it is not a service bc we need to pub angle to topic -> /bluerov2/mount_control/command
 
         self.light_pin = 11.0
         self.gripper_pin = 13.0
@@ -44,12 +43,6 @@ class BlueROVJoystick(Node):
         self.light_min = 1100.0
         self.light_max = 1900.0
         
-        # camera servo
-        # self.tilt = 1450.0
-        # self.tilt_int = 1450.0 # for keeping neutral horizontal position
-        # self.servo_min = 1100.0
-        # self.servo_max = 1850.0
-
         # camera tilt 
         self.tilt = 0.0
         self.tilt_int = 0.0 # for keeping neutral horizontal position
@@ -209,11 +202,11 @@ class BlueROVJoystick(Node):
             
         
         # control light with intensity
-        if btn_light == 1.0 and self.light < self.light_max:  # Right arrow increase
+        if btn_light == -1.0 and self.light < self.light_max:  # Right arrow increase
             self.light = min(self.light + 50.0, self.light_max)
             self.send_servo_command(self.light_pin, self.light)
             self.get_logger().info(f"Light PWM increased: {self.light}")
-        elif btn_light == -1.0 and self.light > self.light_min:  # Left arrow decrease
+        elif btn_light == 1.0 and self.light > self.light_min:  # Left arrow decrease
             self.light = max(self.light - 50.0, self.light_min)
             self.send_servo_command(self.light_pin, self.light)
             self.get_logger().info(f"Light PWM decreased: {self.light}")
@@ -240,23 +233,6 @@ class BlueROVJoystick(Node):
         # Update trigger state for next callback
         self.rt_was_pressed = rt_pressed
         self.lt_was_pressed = lt_pressed
-
-
-        # ### Control Camera tilt angle ###
-        # if (btn_camera_servo_up and not btn_camera_servo_down and self.tilt < self.servo_max):
-        #     self.tilt = min(self.servo_max, self.tilt + 100)
-        #     self.send_servo_command(self.camera_servo_pin, self.tilt)
-        #     self.get_logger().info(f"tilt pwm: {self.tilt}")
-            
-        # elif (btn_camera_servo_down and self.tilt > self. servo_min):
-        #     self.tilt = max(self.servo_min, self.tilt - 100)
-        #     self.send_servo_command(self.camera_servo_pin, self.tilt)
-        #     self.get_logger().info(f"tilt pwm: {self.tilt}")
-            
-        # elif (btn_camera_rest):
-        #     self.tilt = self.tilt_int
-        #     self.send_servo_command(self.camera_servo_pin,self.tilt)
-        #     self.get_logger().info(f"Camera tilt has been reseted")
 
 
         ### Control Camera tilt angle ###
