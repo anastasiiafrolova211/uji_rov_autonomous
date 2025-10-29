@@ -1,7 +1,8 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
-from mavros_msgs.srv import CommandLong, MountControl
+from mavros_msgs.srv import CommandLong
+from mavros_msgs.msg import MountControl
 from time import sleep
 
 class BlueROVJoystick(Node):
@@ -158,7 +159,6 @@ class BlueROVJoystick(Node):
         msg.altitude = 0.0
         msg.latitude = 0.0
         msg.longitude = 0.0
-        msg.save_position = False
 
         self.mount_pub.publish(msg)
         self.get_logger().info(f"Published camera tilt angle: {tilt_angle_deg:.1f}")
@@ -261,10 +261,10 @@ class BlueROVJoystick(Node):
 
         ### Control Camera tilt angle ###
         if btn_camera_servo_up and not btn_camera_servo_down:
-            self.tilt = min(self.tilt + 5, 45.0)  # limit up tilt to +45
+            self.tilt = min(self.tilt + 5, 60.0)  # limit up tilt to +60 - increased to see gripper better
             self.send_camera_tilt_command(self.tilt)
         elif btn_camera_servo_down and not btn_camera_servo_up:
-            self.tilt = max(self.tilt - 5, -45.0)  # limit down tilt to -45
+            self.tilt = max(self.tilt - 5, -60.0)  # limit down tilt to -60
             self.send_camera_tilt_command(self.tilt)
         elif btn_camera_rest:
             self.tilt = 0.0  # reset to horizontal
