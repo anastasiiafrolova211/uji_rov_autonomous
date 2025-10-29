@@ -1,0 +1,29 @@
+[0.433s] Invoking command in '/home/anastasiia/ros2_uji_projectfinal/src/rov_black_box': PYTHONPATH=/home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/rov_black_box build --build-base /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build install --record /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/install.log --single-version-externally-managed install_data
+[0.584s] running egg_info
+[0.584s] writing ../../build/rov_black_box/rov_black_box.egg-info/PKG-INFO
+[0.584s] writing dependency_links to ../../build/rov_black_box/rov_black_box.egg-info/dependency_links.txt
+[0.584s] writing entry points to ../../build/rov_black_box/rov_black_box.egg-info/entry_points.txt
+[0.584s] writing requirements to ../../build/rov_black_box/rov_black_box.egg-info/requires.txt
+[0.585s] writing top-level names to ../../build/rov_black_box/rov_black_box.egg-info/top_level.txt
+[0.585s] reading manifest file '../../build/rov_black_box/rov_black_box.egg-info/SOURCES.txt'
+[0.585s] adding license file 'LICENSE'
+[0.586s] writing manifest file '../../build/rov_black_box/rov_black_box.egg-info/SOURCES.txt'
+[0.586s] running build
+[0.586s] running build_py
+[0.586s] copying rov_black_box/joystick_node.py -> /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build/lib/rov_black_box
+[0.586s] running install
+[0.586s] running install_lib
+[0.587s] copying /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build/lib/rov_black_box/joystick_node.py -> /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box
+[0.587s] byte-compiling /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/joystick_node.py to joystick_node.cpython-310.pyc
+[0.588s] running install_data
+[0.588s] creating /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/launch
+[0.588s] copying launch/joystick.launch.py -> /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/launch
+[0.589s] creating /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/config
+[0.589s] copying config/xbox.config.yaml -> /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/config
+[0.589s] running install_egg_info
+[0.591s] removing '/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info' (and everything under it)
+[0.591s] Copying ../../build/rov_black_box/rov_black_box.egg-info to /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info
+[0.591s] running install_scripts
+[0.605s] Installing joystick_node script to /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/rov_black_box
+[0.605s] writing list of installed files to '/home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/install.log'
+[0.624s] Invoked command in '/home/anastasiia/ros2_uji_projectfinal/src/rov_black_box' returned '0': PYTHONPATH=/home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/rov_black_box build --build-base /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build install --record /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/install.log --single-version-externally-managed install_data

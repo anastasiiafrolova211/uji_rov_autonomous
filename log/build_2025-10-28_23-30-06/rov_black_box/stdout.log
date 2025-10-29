@@ -1,0 +1,32 @@
+running egg_info
+creating ../../build/rov_black_box/rov_black_box.egg-info
+writing ../../build/rov_black_box/rov_black_box.egg-info/PKG-INFO
+writing dependency_links to ../../build/rov_black_box/rov_black_box.egg-info/dependency_links.txt
+writing entry points to ../../build/rov_black_box/rov_black_box.egg-info/entry_points.txt
+writing requirements to ../../build/rov_black_box/rov_black_box.egg-info/requires.txt
+writing top-level names to ../../build/rov_black_box/rov_black_box.egg-info/top_level.txt
+writing manifest file '../../build/rov_black_box/rov_black_box.egg-info/SOURCES.txt'
+reading manifest file '../../build/rov_black_box/rov_black_box.egg-info/SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file '../../build/rov_black_box/rov_black_box.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build
+creating /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build/lib
+creating /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build/lib/rov_black_box
+copying rov_black_box/__init__.py -> /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build/lib/rov_black_box
+running install
+running install_lib
+creating /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box
+copying /home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/build/lib/rov_black_box/__init__.py -> /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box
+byte-compiling /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/__init__.py to __init__.cpython-310.pyc
+running install_data
+creating /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/ament_index
+creating /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/ament_index/resource_index
+creating /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/ament_index/resource_index/packages
+copying resource/rov_black_box -> /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/ament_index/resource_index/packages
+copying package.xml -> /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box
+running install_egg_info
+Copying ../../build/rov_black_box/rov_black_box.egg-info to /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info
+running install_scripts
+writing list of installed files to '/home/anastasiia/ros2_uji_projectfinal/build/rov_black_box/install.log'
