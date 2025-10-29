@@ -11,6 +11,7 @@ setup.py
 ../../build/rov_black_box/rov_black_box.egg-info/zip-safe
 config/xbox.config.yaml
 launch/joystick.launch.py
+launch/run_muvros.launch
 resource/rov_black_box
 rov_black_box/__init__.py
 rov_black_box/joy_debug.py

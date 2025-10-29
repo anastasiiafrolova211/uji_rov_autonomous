@@ -32,7 +32,9 @@ setup(
     entry_points={
         'console_scripts': [
             'joystick_node = rov_black_box.joystick_node:main',
-            'joy_debug = rov_black_box.joy_debug:main',
+            'video_node = rov_black_box.video_node:main',
+            # 'joy_debug = rov_black_box.joy_debug:main',
+
         ],
     },
 )

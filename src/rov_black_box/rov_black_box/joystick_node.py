@@ -52,8 +52,8 @@ class BlueROVJoystick(Node):
         self.gripper_min = 1150.0
         self.gripper_max = 1580.0
 
-        ## Intail test for the system
-        self.run_initialization_test = False  # Changed to False to avoid blinding everyone around
+        ## Initial test for the system
+        self.run_initialization_test = False  # changed to False to avoid blinding everyone around
         if self.run_initialization_test:
             self.initialization_test()
 
@@ -142,10 +142,10 @@ class BlueROVJoystick(Node):
     def send_camera_tilt_command(self, tilt_angle_deg):
         '''
         Publishes camera tilt angle to /bluerov2/mount_control/command (suppose)
-        tilt_angle_deg (float) --> desired tilt in degrees, try between -45 (down) and +45 (up).
+        tilt_angle_deg (float) --> desired tilt in degrees
         '''
         msg = MountControl()
-        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING
+        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING = 2 - value from documentation
         msg.pitch = tilt_angle_deg  # up/down tilt
         msg.roll = 0.0 
         msg.yaw = 0.0

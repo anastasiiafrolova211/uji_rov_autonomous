@@ -7,7 +7,9 @@
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/ament_index/resource_index/packages/rov_black_box
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/package.xml
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/launch/joystick.launch.py
+/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/launch/run_muvros.launch
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/config/xbox.config.yaml
+/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/lib/setup.py
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info/top_level.txt
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info/dependency_links.txt
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info/entry_points.txt

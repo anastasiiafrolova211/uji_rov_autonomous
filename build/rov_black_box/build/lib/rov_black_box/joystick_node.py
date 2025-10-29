@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from mavros_msgs.srv import CommandLong
+from mavros_msgs.msg import MountControl
 from time import sleep
 
 class BlueROVJoystick(Node):
@@ -9,11 +10,17 @@ class BlueROVJoystick(Node):
         super().__init__('bluerov_joystick_node')
         
         self.get_logger().info('Starting BlueROV joystick')
-        self.subscription = self.create_subscription(Joy, '/bluerov2/joy', self.joyCallback, 10)
+        # subscribtion for joystick function
+        self.subscription = self.create_subscription(Joy, 'joy', self.joyCallback, 10)
+        # publish for camera tilting control
+        self.mount_pub = self.create_publisher(MountControl, 'mount_control/command', 10)
 
         # initialize variables
         self.set_mode = [True, False, False]
         self.arming = False
+        # for gropper control
+        self.rt_was_pressed = False
+        self.lt_was_pressed = False
 
         # used pins
         # pins:
@@ -24,39 +31,37 @@ class BlueROVJoystick(Node):
         # 12
         # 13 gripper
         # 14
-        # 15 camera tilting - need to make sure with this one
-        # 16
+        # 15 
+        # 16 camera tilting - as it is not a service bc we need to pub angle to topic -> /bluerov2/mount_control/command
 
         self.light_pin = 11.0
         self.gripper_pin = 13.0
-        self.camera_servo_pin = 15.0
+        self.camera_servo_pin = 16.0
 
         #light values 
         self.light = 1100.0
         self.light_min = 1100.0
         self.light_max = 1900.0
         
-        # camera servo
-        self.tilt = 1450.0
-        self.tilt_int = 1450.0 # for keeping neutral horizontal position
-        self.servo_min = 1100.0
-        self.servo_max = 1850.0
+        # camera tilt 
+        self.tilt = 0.0
+        self.tilt_int = 0.0 # for keeping neutral horizontal position
 
         # gripper
-        self.gripper = 1100.0
-        self.gripper_min = 1100.0
+        self.gripper = 1150.0
+        self.gripper_min = 1150.0
         self.gripper_max = 1580.0
 
         ## Intail test for the system
-        self.run_initialization_test = True
+        self.run_initialization_test = False  # Changed to False to avoid blinding everyone around
         if self.run_initialization_test:
             self.initialization_test()
 
 
-# TODO do i need to add init test for gripper?
-
     def initialization_test(self):
-        """Tests the light by flashing it and tests the camera servo by moving it to max/min limits before starting the sytsem."""
+        """
+        Tests the light by flashing it and tests the camera servo by moving it to max/min limits before starting the sytsem.
+        """
         self.get_logger().info("Testing light and camera servo...")
         
         # Flash the light
@@ -88,6 +93,7 @@ class BlueROVJoystick(Node):
         value (float) --> The pwm value sent to the servo between 1100 and 1900
         '''
         client = self.create_client(CommandLong, 'cmd/command')
+        
         if not client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('MAVROS service not available!')
             return
@@ -99,16 +105,9 @@ class BlueROVJoystick(Node):
         request.param2 = value         # Desired servo position (param2)
         request.param3 = 0.0             
         request.param4 = 0.0    
-        
-        future = client.call_async(request)
 
-        # Check the result
-        if future.result() is not None:
-            self.get_logger().info('Change Completed')
-            self.get_logger().info(f'Sent servo command pin {pin_number}, value {value}')
-
-        else:
-            self.get_logger().error('Failed to preform the change ')
+        client.call_async(request)
+        self.get_logger().debug(f'Sent servo command pin {pin_number}, value {value}')
 
 
     def armDisarm(self, armed):
@@ -137,13 +136,32 @@ class BlueROVJoystick(Node):
         self.get_logger().info("Sending command...")
         resp = cli.call_async(req)  # Send command asynchronously
         
-        # Log the result
         self.get_logger().info(f"{'Arming' if armed else 'Disarming'} Succeeded")
+
+
+    def send_camera_tilt_command(self, tilt_angle_deg):
+        '''
+        Publishes camera tilt angle to /bluerov2/mount_control/command (suppose)
+        tilt_angle_deg (float) --> desired tilt in degrees
+        '''
+        msg = MountControl()
+        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING = 2 - value from documentation
+        msg.pitch = tilt_angle_deg  # up/down tilt
+        msg.roll = 0.0 
+        msg.yaw = 0.0
+        msg.altitude = 0.0
+        msg.latitude = 0.0
+        msg.longitude = 0.0
+
+        self.mount_pub.publish(msg)
+        self.get_logger().info(f"Published camera tilt angle: {tilt_angle_deg:.1f}")
+
+
 
     def joyCallback(self, data):
         ''' 
         Map the Joystick buttons according the bluerov configuration as descriped at
-        https://bluerobotics.com/wp-content/uploads/2023/02/default-button-layout-xbox.jpg
+        [https://bluerobotics.com/wp-content/uploads/2023/02/default-button-layout-xbox.jpg](https://bluerobotics.com/wp-content/uploads/2023/02/default-button-layout-xbox.jpg)
         **Note: the lights are set to be in RT and LT button instead of the cross buttons
         '''
         btn_arm = data.buttons[7]  # Start button
@@ -155,10 +173,10 @@ class BlueROVJoystick(Node):
         btn_camera_servo_down = data.buttons[5] # RB button 
         btn_camera_rest = data.buttons[9] # R3 button 
 
-        btn_light_down = data.axes[2] # LT button
-        btn_light_up = data.axes[5] # RT button
-
-        # dpad_horizontal = data.axes[6]  # D-pad left/right - some chatgpt shit - to check !
+        btn_gripper_open = data.axes[2] # LT button (goes from -1.0 to 1.0 when pressed so threshold is set to +-0.5)
+        btn_gripper_close = data.axes[5] # RT button (same here)
+        
+        btn_light = data.axes[6] # D-Pad left/right
 
 
         # Disarming when Back button is pressed
@@ -170,6 +188,7 @@ class BlueROVJoystick(Node):
             self.arming = True
             self.armDisarm(True)
 
+
         # Switch manual, auto anset_moded correction mode
         if btn_manual_mode and not self.set_mode[0]:
             self.set_mode = [True, False, False]
@@ -180,48 +199,53 @@ class BlueROVJoystick(Node):
         elif btn_corrected_mode and not self.set_mode[2]:
             self.set_mode = [False, False, True]
             self.get_logger().info("Mode correction")
-
-        #### Control light intensity####
-        if (btn_light_up == -1 and self.light < self.light_max):
-            self.light = min(self.light + 100.0, self.light_max)
-            self.send_servo_command(self.light_pin,self.light)
-            self.get_logger().info(f"light PWM is: {self.light}")
             
-        elif (btn_light_down == -1 and self.light > self.light_min):
-            self.light = max(self.light_min,self.light - 100)
-            self.send_servo_command(self.light_pin,self.light)
-            self.get_logger().info(f"light PWM is: {self.light}")
+        
+        # control light with intensity
+        if btn_light == -1.0 and self.light < self.light_max:  # Right arrow increase
+            self.light = min(self.light + 50.0, self.light_max)
+            self.send_servo_command(self.light_pin, self.light)
+            self.get_logger().info(f"Light PWM increased: {self.light}")
+        elif btn_light == 1.0 and self.light > self.light_min:  # Left arrow decrease
+            self.light = max(self.light - 50.0, self.light_min)
+            self.send_servo_command(self.light_pin, self.light)
+            self.get_logger().info(f"Light PWM decreased: {self.light}")
+
+
+
+        # control grippers open/close position
+        rt_pressed = btn_gripper_close < -0.5 # 0.5 is just threshold so no need to push the button fully
+        lt_pressed = btn_gripper_open > 0.5
+        
+        # RT -> open gripper (only trigger once when pressed, not continuously)
+        if rt_pressed and not self.rt_was_pressed and self.gripper < self.gripper_max:
+            self.gripper = min(self.gripper + 430, self.gripper_max)
+            self.send_servo_command(self.gripper_pin, self.gripper)
+            self.get_logger().info(f"Gripper closing. PWM: {self.gripper}")
+            
+        # LT -> close gripper (only trigger once when pressed, not continuously)
+        if lt_pressed and not self.lt_was_pressed and self.gripper > self.gripper_min:
+            self.gripper = max(self.gripper - 430, self.gripper_min)
+            self.send_servo_command(self.gripper_pin, self.gripper)
+            self.get_logger().info(f"Gripper opening. PWM: {self.gripper}")
+
+
+        # Update trigger state for next callback
+        self.rt_was_pressed = rt_pressed
+        self.lt_was_pressed = lt_pressed
+
 
         ### Control Camera tilt angle ###
-        if (btn_camera_servo_up and not btn_camera_servo_down and self.tilt < self.servo_max):
-            self.tilt = min(self.servo_max, self.tilt + 100)
-            self.send_servo_command(self.camera_servo_pin, self.tilt)
-            self.get_logger().info(f"tilt pwm: {self.tilt}")
-            
-        elif (btn_camera_servo_down and self.tilt > self. servo_min):
-            self.tilt = max(self.servo_min, self.tilt - 100)
-            self.send_servo_command(self.camera_servo_pin, self.tilt)
-            self.get_logger().info(f"tilt pwm: {self.tilt}")
-            
-        elif (btn_camera_rest):
-            self.tilt = self.tilt_int
-            self.send_servo_command(self.camera_servo_pin,self.tilt)
-            self.get_logger().info(f"Camera tilt has been reseted")
-
-
-
-
-        # # Gripper control buttons tbd
-        # if dpad_horizontal == 1.0 and self.gripper < self.gripper_max:
-        #     # D-pad Right → Open gripper
-        #     self.gripper = min(self.gripper + 50, self.gripper_max)
-        #     self.send_servo_command(self.gripper_pin, self.gripper)
-        #     self.get_logger().info(f"Gripper opening. PWM: {self.gripper}")
-        # elif dpad_horizontal == -1.0 and self.gripper > self.gripper_min:
-        #     # D-pad Left → Close gripper
-        #     self.gripper = max(self.gripper - 50, self.gripper_min)
-        #     self.send_servo_command(self.gripper_pin, self.gripper)
-        #     self.get_logger().info(f"Gripper closing. PWM: {self.gripper}")
+        if btn_camera_servo_up and not btn_camera_servo_down:
+            self.tilt = min(self.tilt + 5, 60.0)  # limit up tilt to +60 - increased to see gripper better
+            self.send_camera_tilt_command(self.tilt)
+        elif btn_camera_servo_down and not btn_camera_servo_up:
+            self.tilt = max(self.tilt - 5, -60.0)  # limit down tilt to -60
+            self.send_camera_tilt_command(self.tilt)
+        elif btn_camera_rest:
+            self.tilt = 0.0  # reset to horizontal
+            self.send_camera_tilt_command(self.tilt)
+            self.get_logger().info("Camera tilt has been reseted")
 
 
 
