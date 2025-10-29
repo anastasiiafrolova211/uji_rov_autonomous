@@ -1,6 +1,8 @@
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/joystick_node.py
+/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/joy_debug.py
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/__init__.py
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/__pycache__/joystick_node.cpython-310.pyc
+/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/__pycache__/joy_debug.cpython-310.pyc
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box/__pycache__/__init__.cpython-310.pyc
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/ament_index/resource_index/packages/rov_black_box
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/share/rov_black_box/package.xml
@@ -13,4 +15,5 @@
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info/zip-safe
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info/SOURCES.txt
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/python3.10/site-packages/rov_black_box-0.0.0-py3.10.egg-info/PKG-INFO
+/home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/rov_black_box/joy_debug
 /home/anastasiia/ros2_uji_projectfinal/install/rov_black_box/lib/rov_black_box/joystick_node

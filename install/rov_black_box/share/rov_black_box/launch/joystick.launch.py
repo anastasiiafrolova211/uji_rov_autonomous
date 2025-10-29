@@ -24,7 +24,7 @@ def generate_launch_description():
         GroupAction([
             Node(
                 package='joy',
-                executable='joy_node',
+                executable='joy_node', # driver for gamepad
                 name='joy_node',
                 namespace=namespace,
                 output='screen',

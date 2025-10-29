@@ -157,19 +157,20 @@ class BlueROVJoystick(Node):
 
         btn_light_down = data.axes[2] # LT button
         btn_light_up = data.axes[5] # RT button
-        
+
+        btn_gripper = data.axes[6]  # left/right arrow buttons
 
 
-
-        # Arming/Disarming
+        # Disarming when Back button is pressed
         if btn_disarm == 1 and self.arming:
             self.arming = False
             self.armDisarm(False)
+        # Arming when Start button is pressed
         if btn_arm == 1 and not self.arming:
             self.arming = True
             self.armDisarm(True)
 
-        # Mode switching
+        # Switch manual, auto anset_moded correction mode
         if btn_manual_mode and not self.set_mode[0]:
             self.set_mode = [True, False, False]
             self.get_logger().info("Mode manual")
@@ -206,6 +207,21 @@ class BlueROVJoystick(Node):
             self.tilt = self.tilt_int
             self.send_servo_command(self.camera_servo_pin,self.tilt)
             self.get_logger().info(f"Camera tilt has been reseted")
+
+
+
+        # Gripper control buttons
+        if btn_gripper == 1.0 and self.gripper < self.gripper_max:
+            # right -> open gripper
+            self.gripper = min(self.gripper + 50, self.gripper_max)
+            self.send_servo_command(self.gripper_pin, self.gripper)
+            self.get_logger().info(f"Gripper opening. PWM: {self.gripper}")
+        elif btn_gripper == -1.0 and self.gripper > self.gripper_min:
+            # left -> close gripper
+            self.gripper = max(self.gripper - 50, self.gripper_min)
+            self.send_servo_command(self.gripper_pin, self.gripper)
+            self.get_logger().info(f"Gripper closing. PWM: {self.gripper}")
+
 
 
 def main(args=None):
