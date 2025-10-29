@@ -9,7 +9,7 @@ class BlueROVJoystick(Node):
         super().__init__('bluerov_joystick_node')
         
         self.get_logger().info('Starting BlueROV joystick')
-        self.subscription = self.create_subscription(Joy, '/bluerov2/joy', self.joyCallback, 10)
+        self.subscription = self.create_subscription(Joy, 'joy', self.joyCallback, 10)
 
         # initialize variables
         self.set_mode = [True, False, False]
@@ -24,12 +24,13 @@ class BlueROVJoystick(Node):
         # 12
         # 13 gripper
         # 14
-        # 15 camera tilting - need to make sure with this one
-        # 16
+        # 15 
+        # 16 camera tilting - need to make sure with this one
 
         self.light_pin = 11.0
         self.gripper_pin = 13.0
-        self.camera_servo_pin = 15.0
+        self.camera_servo_pin = 16.0
+        # changed camera pin
 
         #light values 
         self.light = 1100.0
@@ -43,11 +44,11 @@ class BlueROVJoystick(Node):
         self.servo_max = 1850.0
 
         # gripper
-        self.gripper = 1100.0
-        self.gripper_min = 1100.0
+        self.gripper = 1150.0
+        self.gripper_min = 1150.0
         self.gripper_max = 1580.0
 
-        ## Intail test for the system
+        ## Initial test for the system
         self.run_initialization_test = True
         if self.run_initialization_test:
             self.initialization_test()
@@ -89,7 +90,7 @@ class BlueROVJoystick(Node):
         pin_number (float) --> the servo number in the navigator board
         value (float) --> The pwm value sent to the servo between 1100 and 1900
         '''
-        client = self.create_client(CommandLong, '/bluerov2/cmd/command') # updated topic name
+        client = self.create_client(CommandLong, 'cmd/command') # updated topic name
         
         if not client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('MAVROS service not available!')
@@ -149,7 +150,9 @@ class BlueROVJoystick(Node):
         https://bluerobotics.com/wp-content/uploads/2023/02/default-button-layout-xbox.jpg
         **Note: the lights are set to be in RT and LT button instead of the cross buttons
         '''
+        
         self.get_logger().info("Entered joyCallback function")
+
         btn_arm = data.buttons[7]  # Start button
         btn_disarm = data.buttons[6]  # Back button
         btn_manual_mode = data.buttons[3]  # Y button
@@ -159,10 +162,12 @@ class BlueROVJoystick(Node):
         btn_camera_servo_down = data.buttons[5] # RB button 
         btn_camera_rest = data.buttons[9] # R3 button 
 
-        btn_light_down = data.axes[2] # LT button
-        btn_light_up = data.axes[5] # RT button
 
-        btn_gripper = data.axes[6]  # left/right arrow buttons
+        btn_gripper_close = data.axes[2]  # LT button
+        btn_gripper_open = data.axes[5]   # RT button
+        
+        btn_light = data.axes[6]          # D-pad left/right
+
 
 
         # Disarming when Back button is pressed
@@ -188,15 +193,24 @@ class BlueROVJoystick(Node):
 
 
         #### Control light intensity####
-        if (btn_light_up == -1 and self.light < self.light_max):
-            self.light = min(self.light + 100.0, self.light_max)
-            self.send_servo_command(self.light_pin,self.light)
-            self.get_logger().info(f"light PWM is: {self.light}")
+        # if (btn_light_up == -1 and self.light < self.light_max):
+        #     self.light = min(self.light + 100.0, self.light_max)
+        #     self.send_servo_command(self.light_pin,self.light)
+        #     self.get_logger().info(f"light PWM is: {self.light}")
             
-        elif (btn_light_down == -1 and self.light > self.light_min):
-            self.light = max(self.light_min,self.light - 100)
-            self.send_servo_command(self.light_pin,self.light)
-            self.get_logger().info(f"light PWM is: {self.light}")
+        # elif (btn_light_down == -1 and self.light > self.light_min):
+        #     self.light = max(self.light_min,self.light - 100)
+        #     self.send_servo_command(self.light_pin,self.light)
+        #     self.get_logger().info(f"light PWM is: {self.light}")
+
+        if btn_light == 1.0 and self.light < self.light_max:  # Right arrow increase
+            self.light = min(self.light + 50.0, self.light_max)
+            self.send_servo_command(self.light_pin, self.light)
+            self.get_logger().info(f"Light PWM increased: {self.light}")
+        elif btn_light == -1.0 and self.light > self.light_min:  # Left arrow decrease
+            self.light = max(self.light - 50.0, self.light_min)
+            self.send_servo_command(self.light_pin, self.light)
+            self.get_logger().info(f"Light PWM decreased: {self.light}")
 
 
         ### Control Camera tilt angle ###
@@ -215,21 +229,26 @@ class BlueROVJoystick(Node):
             self.send_servo_command(self.camera_servo_pin,self.tilt)
             self.get_logger().info(f"Camera tilt has been reseted")
 
+        
+        # gripper control
+        rt_pressed = btn_gripper_open < -0.5 # RT is pressed
+        lt_pressed = btn_gripper_close > 0.5  # LT is pressed
 
-
-        # Gripper control buttons
-        if btn_gripper == 1.0 and self.gripper < self.gripper_max:
-            # right -> open gripper
-            self.gripper = min(self.gripper + 50, self.gripper_max)
+        # RT -> open gripper (only trigger once when pressed, not continuously)
+        if rt_pressed and not self.rt_was_pressed and self.gripper < self.gripper_max:
+            self.gripper = min(self.gripper + 430, self.gripper_max)
             self.send_servo_command(self.gripper_pin, self.gripper)
-            self.get_logger().info(f"Gripper opening. PWM: {self.gripper}")
-        elif btn_gripper == -1.0 and self.gripper > self.gripper_min:
-            # left -> close gripper
-            self.gripper = max(self.gripper - 50, self.gripper_min)
+            self.get_logger().info(f"Gripper opening, PWM: {self.gripper}")
+
+        # LT -> close gripper (only trigger once when pressed, not continuously)
+        elif lt_pressed and not self.lt_was_pressed and self.gripper > self.gripper_min:
+            self.gripper = max(self.gripper - 430, self.gripper_min)
             self.send_servo_command(self.gripper_pin, self.gripper)
-            self.get_logger().info(f"Gripper closing. PWM: {self.gripper}")
+            self.get_logger().info(f"Gripper closing, PWM: {self.gripper}")
 
-
+        # Update trigger state for next callback
+        self.rt_was_pressed = rt_pressed
+        self.lt_was_pressed = lt_pressed
 
 def main(args=None):
     rclpy.init(args=args)
