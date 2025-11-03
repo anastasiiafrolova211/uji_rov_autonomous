@@ -4,7 +4,7 @@ from launch_ros.actions import Node
 from launch.substitutions import LaunchConfiguration
 
 
-def generate_leaunch_description():
+def generate_launch_description():
     namespace = LaunchConfiguration('namespace')
 
     return LaunchDescription([
