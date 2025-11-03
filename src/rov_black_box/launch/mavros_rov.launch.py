@@ -1,7 +1,8 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, FindPackageShare
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import AnyLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -14,8 +15,25 @@ def generate_launch_description():
     fcu_protocol = LaunchConfiguration('fcu_protocol')
     respawn_mavros = LaunchConfiguration('respawn_mavros')
 
-    # Path to mavros node launch file
-    mavros_launch = FindPackageShare('mavros').perform(None) + '/launch/node.launch.py'
+    # Path to mavros launch file
+    mavros_launch = PathJoinSubstitution([
+        FindPackageShare('mavros'),
+        'launch',
+        'node.launch'  # or 'mavros.launch.py' depending on your version
+    ])
+    
+    # Path to config files
+    pluginlists_yaml = PathJoinSubstitution([
+        FindPackageShare('mavros'),
+        'launch',
+        'apm_pluginlists.yaml'
+    ])
+    
+    config_yaml = PathJoinSubstitution([
+        FindPackageShare('mavros'),
+        'launch',
+        'apm_config.yaml'
+    ])
 
     return LaunchDescription([
         DeclareLaunchArgument('namespace', default_value='bluerov2'),
@@ -27,22 +45,20 @@ def generate_launch_description():
         DeclareLaunchArgument('fcu_protocol', default_value='v2.0'),
         DeclareLaunchArgument('respawn_mavros', default_value='false'),
 
-        # Group for MAVROS launch
-        GroupAction([
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(mavros_launch),
-                launch_arguments={
-                    'pluginlists_yaml': FindPackageShare('mavros').perform(None) + '/launch/px4_pluginlists.yaml',
-                    'config_yaml': FindPackageShare('mavros').perform(None) + '/launch/px4_config.yaml',
-                    'fcu_url': fcu_url,
-                    'gcs_url': gcs_url,
-                    'tgt_system': tgt_system,
-                    'tgt_component': tgt_component,
-                    'log_output': log_output,
-                    'fcu_protocol': fcu_protocol,
-                    'respawn_mavros': respawn_mavros,
-                    'namespace': namespace,
-                }.items()
-            ),
-        ]),
+        IncludeLaunchDescription(
+            AnyLaunchDescriptionSource(mavros_launch),
+            launch_arguments={
+                'pluginlists_yaml': pluginlists_yaml,
+                'config_yaml': config_yaml,
+                'fcu_url': fcu_url,
+                'gcs_url': gcs_url,
+                'tgt_system': tgt_system,
+                'tgt_component': tgt_component,
+                'log_output': log_output,
+                'fcu_protocol': fcu_protocol,
+                'respawn_mavros': respawn_mavros,
+                'namespace': namespace,
+            }.items(),
+        ),
     ])
+

@@ -1,4 +1,3 @@
 [console_scripts]
-joy_debug = rov_black_box.joy_debug:main
 joystick_node = rov_black_box.joystick_node:main
-
+video_node = rov_black_box.video_node:main

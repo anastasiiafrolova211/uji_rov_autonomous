@@ -5,7 +5,7 @@ from sensor_msgs.msg import Joy
 class JoyDebugger(Node):
     def __init__(self):
         super().__init__('joy_debugger')
-        self.create_subscription(Joy, '/joy', self.callback, 10)
+        self.create_subscription(Joy, 'joy', self.callback, 10)
 
     def callback(self, data):
         self.get_logger().info(f"Buttons: {data.buttons}")

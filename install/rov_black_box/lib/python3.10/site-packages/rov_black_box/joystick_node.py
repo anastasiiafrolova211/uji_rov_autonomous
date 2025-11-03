@@ -52,8 +52,8 @@ class BlueROVJoystick(Node):
         self.gripper_min = 1150.0
         self.gripper_max = 1580.0
 
-        ## Intail test for the system
-        self.run_initialization_test = False  # Changed to False to avoid blinding everyone around
+        ## Initial test for the system
+        self.run_initialization_test = False  # changed to False to avoid blinding everyone around
         if self.run_initialization_test:
             self.initialization_test()
 

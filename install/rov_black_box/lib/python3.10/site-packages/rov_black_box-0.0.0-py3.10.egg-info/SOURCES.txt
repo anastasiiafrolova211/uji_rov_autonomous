@@ -11,11 +11,13 @@ setup.py
 ../../build/rov_black_box/rov_black_box.egg-info/zip-safe
 config/xbox.config.yaml
 launch/joystick.launch.py
-launch/run_muvros.launch
+launch/mavros_rov.launch.py
+launch/video.launch.py
 resource/rov_black_box
 rov_black_box/__init__.py
 rov_black_box/joy_debug.py
 rov_black_box/joystick_node.py
+rov_black_box/video_node.py
 test/test_copyright.py
 test/test_flake8.py
 test/test_pep257.py
