@@ -15,6 +15,15 @@ class BlueROVJoystick(Node):
         # publish for camera tilting control
         self.mount_pub = self.create_publisher(MountControl, 'mount_control/command', 10)
 
+        # Create timer for continuous control (20 Hz)
+        self.timer = self.create_timer(0.05, self.continuous_control_callback)
+
+        # Button state tracking for continuous control
+        self.lb_held = False  # Left bumper for tilt up
+        self.rb_held = False  # Right bumper for tilt down
+        self.dpad_left_held = False  # D-pad left for dimming lights
+        self.dpad_right_held = False  # D-pad right for brightening lights
+
         # initialize variables
         self.set_mode = [True, False, False]
         self.arming = False
@@ -42,10 +51,14 @@ class BlueROVJoystick(Node):
         self.light = 1100.0
         self.light_min = 1100.0
         self.light_max = 1900.0
+        self.light_step = 15.0  # Continuous increment per timer tick
         
         # camera tilt 
         self.tilt = 0.0
         self.tilt_int = 0.0 # for keeping neutral horizontal position
+        self.tilt_step = 2.0  # Continuous increment (degrees) per timer tick
+        self.tilt_min = -60.0
+        self.tilt_max = 60.0
 
         # gripper
         self.gripper = 1150.0
@@ -84,6 +97,36 @@ class BlueROVJoystick(Node):
         sleep(0.5)
         self.tilt = self.tilt_int  # Reset camera tilt to neutral
         self.send_servo_command(self.camera_servo_pin, self.tilt)
+
+
+    def continuous_control_callback(self):
+        """
+        Timer callback for continuous camera tilt and light control when buttons are held
+        """
+        changed_tilt = False
+        changed_light = False
+        
+        # Continuous camera tilt control
+        if self.lb_held:
+            self.tilt = min(self.tilt + self.tilt_step, self.tilt_max)
+            changed_tilt = True
+        elif self.rb_held:
+            self.tilt = max(self.tilt - self.tilt_step, self.tilt_min)
+            changed_tilt = True
+        
+        # Continuous light control
+        if self.dpad_right_held:
+            self.light = min(self.light + self.light_step, self.light_max)
+            changed_light = True
+        elif self.dpad_left_held:
+            self.light = max(self.light - self.light_step, self.light_min)
+            changed_light = True
+        
+        # Publish updates
+        if changed_tilt:
+            self.send_camera_tilt_command(self.tilt)
+        if changed_light:
+            self.send_servo_command(self.light_pin, self.light)
 
 
     def send_servo_command(self, pin_number, value):
@@ -154,8 +197,7 @@ class BlueROVJoystick(Node):
         msg.longitude = 0.0
 
         self.mount_pub.publish(msg)
-        self.get_logger().info(f"Published camera tilt angle: {tilt_angle_deg:.1f}")
-
+        self.get_logger().debug(f"Camera tilt: {tilt_angle_deg:.1f}°")
 
 
     def joyCallback(self, data):
@@ -178,6 +220,11 @@ class BlueROVJoystick(Node):
         
         btn_light = data.axes[6] # D-Pad left/right
 
+        # Update button held states for continuous control
+        self.lb_held = btn_camera_servo_up == 1
+        self.rb_held = btn_camera_servo_down == 1
+        self.dpad_left_held = btn_light == 1.0  # D-pad left
+        self.dpad_right_held = btn_light == -1.0  # D-pad right
 
         # Disarming when Back button is pressed
         if btn_disarm == 1 and self.arming:
@@ -187,7 +234,6 @@ class BlueROVJoystick(Node):
         if btn_arm == 1 and not self.arming:
             self.arming = True
             self.armDisarm(True)
-
 
         # Switch manual, auto anset_moded correction mode
         if btn_manual_mode and not self.set_mode[0]:
@@ -199,19 +245,12 @@ class BlueROVJoystick(Node):
         elif btn_corrected_mode and not self.set_mode[2]:
             self.set_mode = [False, False, True]
             self.get_logger().info("Mode correction")
-            
-        
-        # control light with intensity
-        if btn_light == -1.0 and self.light < self.light_max:  # Right arrow increase
-            self.light = min(self.light + 50.0, self.light_max)
-            self.send_servo_command(self.light_pin, self.light)
-            self.get_logger().info(f"Light PWM increased: {self.light}")
-        elif btn_light == 1.0 and self.light > self.light_min:  # Left arrow decrease
-            self.light = max(self.light - 50.0, self.light_min)
-            self.send_servo_command(self.light_pin, self.light)
-            self.get_logger().info(f"Light PWM decreased: {self.light}")
 
-
+        # Camera reset to horizontal
+        if btn_camera_rest:
+            self.tilt = 0.0  # reset to horizontal
+            self.send_camera_tilt_command(self.tilt)
+            self.get_logger().info("Camera tilt has been reseted")
 
         # control grippers open/close position
         rt_pressed = btn_gripper_close < -0.5 # 0.5 is just threshold so no need to push the button fully
@@ -229,24 +268,9 @@ class BlueROVJoystick(Node):
             self.send_servo_command(self.gripper_pin, self.gripper)
             self.get_logger().info(f"Gripper opening. PWM: {self.gripper}")
 
-
         # Update trigger state for next callback
         self.rt_was_pressed = rt_pressed
         self.lt_was_pressed = lt_pressed
-
-
-        ### Control Camera tilt angle ###
-        if btn_camera_servo_up and not btn_camera_servo_down:
-            self.tilt = min(self.tilt + 5, 60.0)  # limit up tilt to +60 - increased to see gripper better
-            self.send_camera_tilt_command(self.tilt)
-        elif btn_camera_servo_down and not btn_camera_servo_up:
-            self.tilt = max(self.tilt - 5, -60.0)  # limit down tilt to -60
-            self.send_camera_tilt_command(self.tilt)
-        elif btn_camera_rest:
-            self.tilt = 0.0  # reset to horizontal
-            self.send_camera_tilt_command(self.tilt)
-            self.get_logger().info("Camera tilt has been reseted")
-
 
 
 def main(args=None):
@@ -258,3 +282,4 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+

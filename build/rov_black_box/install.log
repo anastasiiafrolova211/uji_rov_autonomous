@@ -10,6 +10,7 @@
 /home/elex/uji_rov_autonomous/install/rov_black_box/share/rov_black_box/package.xml
 /home/elex/uji_rov_autonomous/install/rov_black_box/share/rov_black_box/launch/joystick.launch.py
 /home/elex/uji_rov_autonomous/install/rov_black_box/share/rov_black_box/launch/mavros_rov.launch.py
+/home/elex/uji_rov_autonomous/install/rov_black_box/share/rov_black_box/launch/bluerov_system.launch.py
 /home/elex/uji_rov_autonomous/install/rov_black_box/share/rov_black_box/launch/video.launch.py
 /home/elex/uji_rov_autonomous/install/rov_black_box/share/rov_black_box/launch
 /home/elex/uji_rov_autonomous/install/rov_black_box/share/rov_black_box/config/xbox.config.yaml

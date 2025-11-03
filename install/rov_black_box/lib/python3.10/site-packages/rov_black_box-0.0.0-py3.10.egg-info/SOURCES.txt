@@ -10,6 +10,7 @@ setup.py
 ../../build/rov_black_box/rov_black_box.egg-info/top_level.txt
 ../../build/rov_black_box/rov_black_box.egg-info/zip-safe
 config/xbox.config.yaml
+launch/bluerov_system.launch.py
 launch/joystick.launch.py
 launch/mavros_rov.launch.py
 launch/video.launch.py
