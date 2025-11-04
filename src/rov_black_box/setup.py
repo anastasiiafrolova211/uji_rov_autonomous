@@ -34,6 +34,7 @@ setup(
             'joystick_node = rov_black_box.joystick_node:main',
             'video_node = rov_black_box.video_node:main',
             # 'joy_debug = rov_black_box.joy_debug:main',
+            'track_box_node = rov_black_box.track_box_node:main',
 
         ],
     },

@@ -18,8 +18,15 @@ def generate_launch_description():
                 name = 'video_node',
                 namespace = namespace,
                 output = 'screen'
+            ),
+
+            Node(
+                package = 'rov_black_box',
+                executable = 'track_box_node',
+                name = 'track_box_node',
+                namespace = namespace,
+                output = 'screen'
             )
-            # add tracker nore here if i want to run them at the same time 
         ])
     ])
 
