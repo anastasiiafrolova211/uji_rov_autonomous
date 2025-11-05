@@ -111,6 +111,7 @@ class TrackBoxNode(Node):
 
         # Load templates once
         self.template_dir = "box_templates"
+        # here should be a full folder path depends on the laptop it is used on
         self.templates = self.load_templates()
 
         # Last state memory
