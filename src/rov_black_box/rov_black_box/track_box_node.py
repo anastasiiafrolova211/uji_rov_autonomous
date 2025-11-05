@@ -5,7 +5,6 @@ from sensor_msgs.msg import Image
 import numpy as np
 import cv2
 import os
-from . import camera_parameters as cam
 from cv_bridge import CvBridge
 
 # camera parameters - calibrated to our Bellatrix/Barbi/Bibble
