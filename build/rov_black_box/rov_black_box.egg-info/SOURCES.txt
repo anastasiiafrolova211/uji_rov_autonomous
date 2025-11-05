@@ -16,6 +16,8 @@ launch/mavros_rov.launch.py
 launch/video.launch.py
 resource/rov_black_box
 rov_black_box/__init__.py
+rov_black_box/aruco_detector.py
+rov_black_box/camera_calibration.py
 rov_black_box/joy_debug.py
 rov_black_box/joystick_node.py
 rov_black_box/video_node.py

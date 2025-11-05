@@ -33,6 +33,8 @@ setup(
         'console_scripts': [
             'joystick_node = rov_black_box.joystick_node:main',
             'video_node = rov_black_box.video_node:main',
+            'aruco_detector = rov_black_box.aruco_detector:main',
+            'camera_calibration = rov_black_box.camera_calibration:main',
             # 'joy_debug = rov_black_box.joy_debug:main',
 
         ],

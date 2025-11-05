@@ -12,6 +12,7 @@ def generate_launch_description():
     gcs_url = LaunchConfiguration('gcs_url')
     video_port = LaunchConfiguration('video_port')
 
+    # MAVROS launch file and config
     mavros_launch = PathJoinSubstitution([
         FindPackageShare('mavros'),
         'launch',
@@ -31,12 +32,13 @@ def generate_launch_description():
     ])
 
     return LaunchDescription([
+        # Launch Arguments
         DeclareLaunchArgument('namespace', default_value='bluerov2'),
         DeclareLaunchArgument('fcu_url', default_value='udp://192.168.2.1:14550@192.168.2.2'),
         DeclareLaunchArgument('gcs_url', default_value='udp://@127.0.0.1'),
         DeclareLaunchArgument('video_port', default_value='5600'),
 
-        # Launch MAVROS
+        # MAVROS Node
         IncludeLaunchDescription(
             AnyLaunchDescriptionSource(mavros_launch),
             launch_arguments={
@@ -53,40 +55,17 @@ def generate_launch_description():
             }.items()
         ),
 
-        # Launch Video Node
+        # YOLO Detector Node
         Node(
-            package='rov_black_box',
-            executable='video_node',
-            name='video_node',
+            package='box_handle_detector',
+            executable='detector_node',
+            name='yolo_detector',
             namespace=namespace,
             output='screen',
             parameters=[{
-                'port': video_port,
-                'enable_detection': True,
-                
-                # ArUco marker IDs and sizes (MEASURE YOUR MARKERS!)
-                'box_marker_id_1': 10,
-                'box_marker_id_2': 11,
-                'marker_size_1': 0.05,  # 5cm - ADJUST THIS!
-                'marker_size_2': 0.08,  # 8cm - ADJUST THIS!
-                
-                # Box dimensions
-                'box_length': 0.30,
-                'box_width': 0.16,
-                'box_height': 0.14,
-                
-                # Marker offsets from box center
-                'marker1_offset_x': 0.15,
-                'marker1_offset_y': 0.0,
-                'marker1_offset_z': 0.0,
-                'marker2_offset_x': -0.15,
-                'marker2_offset_y': 0.0,
-                'marker2_offset_z': 0.0,
-                
-                # Handle offset from box center
-                'handle_offset_x': 0.0,
-                'handle_offset_y': 0.0,
-                'handle_offset_z': 0.07,
+                'model_path': '/home/ubuntu/models/box_handle_best.pt',  # Update path to your model
+                'conf_threshold': 0.5,
+                'camera_frame': 'camera_link'
             }]
         ),
     ])
