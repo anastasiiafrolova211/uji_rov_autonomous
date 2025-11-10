@@ -24,7 +24,6 @@ rov_black_box/detector_node.py
 rov_black_box/joy_debug.py
 rov_black_box/joystick_node.py
 rov_black_box/underwater_detection_node.py
-rov_black_box/underwater_detetion_node.py
 rov_black_box/video_node.py
 test/test_copyright.py
 test/test_flake8.py

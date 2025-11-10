@@ -1,83 +1,78 @@
+#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from mavros_msgs.srv import CommandLong
-from mavros_msgs.msg import MountControl
+from mavros_msgs.msg import MountControl, OverrideRCIn
 from time import sleep
+import numpy as np
+
 
 class BlueROVJoystick(Node):
     def __init__(self):
         super().__init__('bluerov_joystick_node')
         
         self.get_logger().info('Starting BlueROV joystick')
-        # subscribtion for joystick function
-        self.subscription = self.create_subscription(Joy, 'joy', self.joyCallback, 10)
-        # publish for camera tilting control
+        
+        # Publishers
+        self.pub_msg_override = self.create_publisher(OverrideRCIn, "rc/override", 10)
         self.mount_pub = self.create_publisher(MountControl, 'mount_control/command', 10)
+        
+        # Subscribers
+        self.subscription = self.create_subscription(Joy, 'joy', self.joyCallback, 10)
 
-        # Create timer for continuous control (20 Hz)
+        # Timer for continuous control (20 Hz)
         self.timer = self.create_timer(0.05, self.continuous_control_callback)
+        
+        # Arm/disarm
+        self.armDisarm(False)
 
         # Button state tracking for continuous control
-        self.lb_held = False  # Left bumper for tilt up
-        self.rb_held = False  # Right bumper for tilt down
-        self.dpad_left_held = False  # D-pad left for dimming lights
-        self.dpad_right_held = False  # D-pad right for brightening lights
+        self.lb_held = False
+        self.rb_held = False
+        self.dpad_left_held = False
+        self.dpad_right_held = False
 
-        # initialize variables
-        self.set_mode = [True, False, False]
+        # Mode variables
+        self.set_mode = [True, False, False]  # [manual, auto, correction]
         self.arming = False
-        # for gropper control
+        
+        # Gripper control
         self.rt_was_pressed = False
         self.lt_was_pressed = False
 
-        # used pins
-        # pins:
-        # 1-8 are thrusters
-        # 9 
-        # 10
-        # 11 light
-        # 12
-        # 13 gripper
-        # 14
-        # 15 
-        # 16 camera tilting - as it is not a service bc we need to pub angle to topic -> /bluerov2/mount_control/command
-
+        # Pin assignments
         self.light_pin = 11.0
         self.gripper_pin = 13.0
         self.camera_servo_pin = 16.0
 
-        #light values 
+        # Light values 
         self.light = 1100.0
         self.light_min = 1100.0
         self.light_max = 1900.0
-        self.light_step = 15.0  # Continuous increment per timer tick
+        self.light_step = 15.0
         
-        # camera tilt 
+        # Camera tilt 
         self.tilt = 0.0
-        self.tilt_int = 0.0 # for keeping neutral horizontal position
-        self.tilt_step = 2.0  # Continuous increment (degrees) per timer tick
+        self.tilt_step = 2.0
         self.tilt_min = -60.0
         self.tilt_max = 60.0
 
-        # gripper
+        # Gripper
         self.gripper = 1150.0
         self.gripper_min = 1150.0
         self.gripper_max = 1580.0
 
-        ## Initial test for the system
-        self.run_initialization_test = False  # changed to False to avoid blinding everyone around
+        # Initialization test
+        self.run_initialization_test = False
         if self.run_initialization_test:
             self.initialization_test()
 
-
     def initialization_test(self):
-        """
-        Tests the light by flashing it and tests the camera servo by moving it to max/min limits before starting the sytsem.
-        """
+        """Test light and camera servo"""
         self.get_logger().info("Testing light and camera servo...")
         
-        # Flash the light
+        # Flash light
         self.light = self.light_max
         self.send_servo_command(self.light_pin, self.light)
         sleep(0.5)
@@ -85,28 +80,25 @@ class BlueROVJoystick(Node):
         self.send_servo_command(self.light_pin, self.light)
         sleep(0.5)
         
-        # Move the camera servo to max and min
-        self.tilt = self.tilt_int
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
+        # Move camera
+        self.tilt = 0.0
+        self.send_camera_tilt_command(self.tilt)
         sleep(0.5)
-        self.tilt = self.servo_max
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
+        self.tilt = self.tilt_max
+        self.send_camera_tilt_command(self.tilt)
         sleep(0.5)
-        self.tilt = self.servo_min
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
+        self.tilt = self.tilt_min
+        self.send_camera_tilt_command(self.tilt)
         sleep(0.5)
-        self.tilt = self.tilt_int  # Reset camera tilt to neutral
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
-
+        self.tilt = 0.0
+        self.send_camera_tilt_command(self.tilt)
 
     def continuous_control_callback(self):
-        """
-        Timer callback for continuous camera tilt and light control when buttons are held
-        """
+        """Timer callback for continuous camera tilt and light control"""
         changed_tilt = False
         changed_light = False
         
-        # Continuous camera tilt control
+        # Continuous camera tilt
         if self.lb_held:
             self.tilt = min(self.tilt + self.tilt_step, self.tilt_max)
             changed_tilt = True
@@ -128,69 +120,54 @@ class BlueROVJoystick(Node):
         if changed_light:
             self.send_servo_command(self.light_pin, self.light)
 
-
     def send_servo_command(self, pin_number, value):
-        '''
-        Sends a command to the navigator to adjust servo pins pwm using Mavros service
-        pin_number (float) --> the servo number in the navigator board
-        value (float) --> The pwm value sent to the servo between 1100 and 1900
-        '''
+        """Send servo command via MAVROS"""
         client = self.create_client(CommandLong, 'cmd/command')
         
         if not client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('MAVROS service not available!')
             return
         
-        # Set the parameters for the command (command 183: MAV_CMD_DO_SET_SERVO)
         request = CommandLong.Request()
-        request.command = 183       # Command 183: MAV_CMD_DO_SET_SERVO
-        request.param1 = pin_number           # Servo number (param1)
-        request.param2 = value         # Desired servo position (param2)
-        request.param3 = 0.0             
-        request.param4 = 0.0    
+        request.command = 183  # MAV_CMD_DO_SET_SERVO
+        request.param1 = pin_number
+        request.param2 = value
+        request.param3 = 0.0
+        request.param4 = 0.0
 
         client.call_async(request)
-        self.get_logger().debug(f'Sent servo command pin {pin_number}, value {value}')
-
+        self.get_logger().debug(f'Servo pin {pin_number}, value {value}')
 
     def armDisarm(self, armed):
-        '''
-        Arms or disarms the vehicle motors using MAVROS command 400.
-        '''
-        cli = self.create_client(CommandLong, 'cmd/command')  # Create MAVROS service client
+        """Arm or disarm vehicle"""
+        cli = self.create_client(CommandLong, 'cmd/command')
         result = False
         while not result:
-            result = cli.wait_for_service(timeout_sec=4.0)  # Wait for service to be available
+            result = cli.wait_for_service(timeout_sec=4.0)
             self.get_logger().info(f"{'Arming' if armed else 'Disarming'} requested, waiting for service: {result}")
         
-        # Create request object for arming/disarming
         req = CommandLong.Request()
-        req.broadcast = False   # Command is not broadcasted
-        req.command = 400       # MAV_CMD_COMPONENT_ARM_DISARM
-        req.confirmation = 0    # No confirmation required
-        req.param1 = 1.0 if armed else 0.0  # 1.0 = Arm, 0.0 = Disarm
-        req.param2 = 0.0  
-        req.param3 = 0.0  
-        req.param4 = 0.0  
-        req.param5 = 0.0  
-        req.param6 = 0.0  
-        req.param7 = 0.0 
+        req.broadcast = False
+        req.command = 400  # MAV_CMD_COMPONENT_ARM_DISARM
+        req.confirmation = 0
+        req.param1 = 1.0 if armed else 0.0
+        req.param2 = 0.0
+        req.param3 = 0.0
+        req.param4 = 0.0
+        req.param5 = 0.0
+        req.param6 = 0.0
+        req.param7 = 0.0
         
         self.get_logger().info("Sending command...")
-        resp = cli.call_async(req)  # Send command asynchronously
-        
+        cli.call_async(req)
         self.get_logger().info(f"{'Arming' if armed else 'Disarming'} Succeeded")
 
-
     def send_camera_tilt_command(self, tilt_angle_deg):
-        '''
-        Publishes camera tilt angle to /bluerov2/mount_control/command (suppose)
-        tilt_angle_deg (float) --> desired tilt in degrees
-        '''
+        """Publish camera tilt angle"""
         msg = MountControl()
-        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING = 2 - value from documentation
-        msg.pitch = tilt_angle_deg  # up/down tilt
-        msg.roll = 0.0 
+        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING
+        msg.pitch = tilt_angle_deg
+        msg.roll = 0.0
         msg.yaw = 0.0
         msg.altitude = 0.0
         msg.latitude = 0.0
@@ -199,78 +176,111 @@ class BlueROVJoystick(Node):
         self.mount_pub.publish(msg)
         self.get_logger().debug(f"Camera tilt: {tilt_angle_deg:.1f}°")
 
-
     def joyCallback(self, data):
-        ''' 
-        Map the Joystick buttons according the bluerov configuration as descriped at
-        [https://bluerobotics.com/wp-content/uploads/2023/02/default-button-layout-xbox.jpg](https://bluerobotics.com/wp-content/uploads/2023/02/default-button-layout-xbox.jpg)
-        **Note: the lights are set to be in RT and LT button instead of the cross buttons
-        '''
-        btn_arm = data.buttons[7]  # Start button
-        btn_disarm = data.buttons[6]  # Back button
-        btn_manual_mode = data.buttons[3]  # Y button
-        btn_automatic_mode = data.buttons[2]  # X button
-        btn_corrected_mode = data.buttons[0]  # A button
-        btn_camera_servo_up = data.buttons[4] # LB button 
-        btn_camera_servo_down = data.buttons[5] # RB button 
-        btn_camera_rest = data.buttons[9] # R3 button 
+        """Process joystick input"""
+        # Button mapping
+        btn_arm = data.buttons[7]  # Start
+        btn_disarm = data.buttons[6]  # Back
+        btn_manual_mode = data.buttons[3]  # Y
+        btn_automatic_mode = data.buttons[2]  # X
+        btn_corrected_mode = data.buttons[0]  # A
+        btn_camera_servo_up = data.buttons[4]  # LB
+        btn_camera_servo_down = data.buttons[5]  # RB
+        btn_camera_rest = data.buttons[9]  # R3
 
-        btn_gripper_open = data.axes[2] # LT button (goes from -1.0 to 1.0 when pressed so threshold is set to +-0.5)
-        btn_gripper_close = data.axes[5] # RT button (same here)
-        
-        btn_light = data.axes[6] # D-Pad left/right
+        btn_gripper_open = data.axes[2]  # LT
+        btn_gripper_close = data.axes[5]  # RT
+        btn_light = data.axes[6]  # D-Pad
 
-        # Update button held states for continuous control
+        # Update held states
         self.lb_held = btn_camera_servo_up == 1
         self.rb_held = btn_camera_servo_down == 1
-        self.dpad_left_held = btn_light == 1.0  # D-pad left
-        self.dpad_right_held = btn_light == -1.0  # D-pad right
+        self.dpad_left_held = btn_light == 1.0
+        self.dpad_right_held = btn_light == -1.0
 
-        # Disarming when Back button is pressed
+        # Arm/Disarm
         if btn_disarm == 1 and self.arming:
             self.arming = False
             self.armDisarm(False)
-        # Arming when Start button is pressed
         if btn_arm == 1 and not self.arming:
             self.arming = True
             self.armDisarm(True)
 
-        # Switch manual, auto anset_moded correction mode
+        # Mode switching
         if btn_manual_mode and not self.set_mode[0]:
             self.set_mode = [True, False, False]
-            self.get_logger().info("Mode manual")
+            self.get_logger().info("Mode: Manual")
         elif btn_automatic_mode and not self.set_mode[1]:
             self.set_mode = [False, True, False]
-            self.get_logger().info("Mode automatic")
+            self.get_logger().info("Mode: Automatic")
         elif btn_corrected_mode and not self.set_mode[2]:
             self.set_mode = [False, False, True]
-            self.get_logger().info("Mode correction")
+            self.get_logger().info("Mode: Correction")
 
-        # Camera reset to horizontal
+        # Camera reset
         if btn_camera_rest:
-            self.tilt = 0.0  # reset to horizontal
+            self.tilt = 0.0
             self.send_camera_tilt_command(self.tilt)
-            self.get_logger().info("Camera tilt has been reseted")
+            self.get_logger().info("Camera tilt reset")
 
-        # control grippers open/close position
-        rt_pressed = btn_gripper_close < -0.5 # 0.5 is just threshold so no need to push the button fully
+        # Gripper control
+        rt_pressed = btn_gripper_close < -0.5
         lt_pressed = btn_gripper_open > 0.5
         
-        # RT -> open gripper (only trigger once when pressed, not continuously)
         if rt_pressed and not self.rt_was_pressed and self.gripper < self.gripper_max:
             self.gripper = min(self.gripper + 430, self.gripper_max)
             self.send_servo_command(self.gripper_pin, self.gripper)
-            self.get_logger().info(f"Gripper closing. PWM: {self.gripper}")
+            self.get_logger().info(f"Gripper closing: {self.gripper}")
             
-        # LT -> close gripper (only trigger once when pressed, not continuously)
         if lt_pressed and not self.lt_was_pressed and self.gripper > self.gripper_min:
             self.gripper = max(self.gripper - 430, self.gripper_min)
             self.send_servo_command(self.gripper_pin, self.gripper)
-            self.get_logger().info(f"Gripper opening. PWM: {self.gripper}")
+            self.get_logger().info(f"Gripper opening: {self.gripper}")
 
-        # Update trigger state for next callback
         self.rt_was_pressed = rt_pressed
         self.lt_was_pressed = lt_pressed
+
+        # === THRUSTER CONTROL ===
+        if self.set_mode[0] and self.arming:  # Manual mode and armed
+            # Axis mapping (adjust based on your controller)
+            forward = self.mapValueScalSat(-data.axes[1])   # Left stick Y
+            lateral = self.mapValueScalSat(-data.axes[0])   # Left stick X
+            yaw = self.mapValueScalSat(-data.axes[3])       # Right stick X
+            vertical = self.mapValueScalSat(data.axes[4])   # Right stick Y
+            
+            # Send thruster commands
+            self.setOverrideRCIN(
+                channel_pitch=1500,
+                channel_roll=1500,
+                channel_throttle=vertical,
+                channel_yaw=yaw,
+                channel_forward=forward,
+                channel_lateral=lateral
+            )
+        elif not self.arming:
+            # Send neutral commands when disarmed
+            self.setOverrideRCIN(1500, 1500, 1500, 1500, 1500, 1500)
+
+    def mapValueScalSat(self, value):
+        """Map joystick -1 to 1 to PWM 1100-1900"""
+        pulse_width = value * 400 + 1500
+        return int(np.clip(pulse_width, 1100, 1700))
+
+    def setOverrideRCIN(self, channel_pitch, channel_roll, channel_throttle,
+                        channel_yaw, channel_forward, channel_lateral):
+        """Override RC channels to control thrusters"""
+        msg_override = OverrideRCIn()
+        msg_override.channels[0] = np.uint16(channel_pitch)
+        msg_override.channels[1] = np.uint16(channel_roll)
+        msg_override.channels[2] = np.uint16(channel_throttle)
+        msg_override.channels[3] = np.uint16(channel_yaw)
+        msg_override.channels[4] = np.uint16(channel_forward)
+        msg_override.channels[5] = np.uint16(channel_lateral)
+        msg_override.channels[6] = 1500
+        msg_override.channels[7] = 1500
+
+        self.pub_msg_override.publish(msg_override)
+        self.get_logger().info(f"published override = {msg_override}")
 
 
 def main(args=None):
@@ -279,6 +289,7 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
