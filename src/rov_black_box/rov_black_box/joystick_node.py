@@ -1,9 +1,13 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+
 from mavros_msgs.srv import CommandLong
 from mavros_msgs.msg import MountControl
-from mavros_msgs.msg import OverrideRCIn, StreamRate
+from mavros_msgs.msg import OverrideRCIn
+from geometry_msgs.msg import Twist
+
 from time import sleep
 import numpy as np
 
@@ -16,7 +20,8 @@ class BlueROVJoystick(Node):
         # for thruster pwm commands
         self.pub_msg_override = self.create_publisher(OverrideRCIn, "rc/override", 10)
         # subscribtion for joystick function
-        self.subscription = self.create_subscription(Joy, 'joy', self.joyCallback, 10)
+        self.pub_angular_velocity = self.create_publisher(Twist, 'angular_velocity', 10)
+        self.pub_linear_velocity = self.create_publisher(Twist, 'linear_velocity', 10)
         # publish for camera tilting control
         self.mount_pub = self.create_publisher(MountControl, 'mount_control/command', 10)
 
@@ -24,9 +29,8 @@ class BlueROVJoystick(Node):
         self.timer = self.create_timer(0.05, self.continuous_control_callback)
         
         self.armDisarm(False)
-        rate = 20  # 20 Hz -> was 25 Hz
-        self.setStreamRate(rate)
 
+        self.subscriber()
 
         # Button state tracking for continuous control
         self.lb_held = False  # Left bumper for tilt up
@@ -320,7 +324,7 @@ def velCallback(self, cmd_vel):
         # Extract cmd_vel message
         roll_left_right = self.mapValueScalSat(cmd_vel.angular.x)
         yaw_left_right = self.mapValueScalSat(-cmd_vel.angular.z)
-        ascend_descend = self.mapValueScalSat(cmd_vel.linear.z)
+        ascend_descend = self.mapValueScalSat(-cmd_vel.linear.z) # changed the sign
         forward_reverse = self.mapValueScalSat(cmd_vel.linear.x)
         lateral_left_right = self.mapValueScalSat(-cmd_vel.linear.y)
         pitch_left_right = self.mapValueScalSat(cmd_vel.angular.y)
@@ -349,23 +353,6 @@ def setOverrideRCIN(self, channel_pitch, channel_roll, channel_throttle, channel
 
         self.pub_msg_override.publish(msg_override)
 
-def setStreamRate(self, rate):
-        ''' Set the Mavros rate for reading the senosor data'''
-        traceback_logger = rclpy.logging.get_logger('node_class_traceback_logger')
-        cli = self.create_client(StreamRate, 'set_stream_rate')
-        result = False
-        while not result:
-            result = cli.wait_for_service(timeout_sec=4.0)
-            self.get_logger().info("stream rate requested, wait_for_service, (False if timeout) result :" + str(result))
-
-        req = StreamRate.Request()
-        req.stream_id = 0
-        req.message_rate = rate
-        req.on_off = True
-        resp = cli.call_async(req)
-        rclpy.spin_until_future_complete(self, resp)
-        self.get_logger().info("set stream rate Succeeded")
-
 
 def mapValueScalSat(self, value):
         ''' Map the value of the joystick analog form -1 to 1 to a pwm value form 1100 to 1900
@@ -373,13 +360,28 @@ def mapValueScalSat(self, value):
         pulse_width = value * 400 + 1500
 
         # Saturation
-        if pulse_width > 1900:
-            pulse_width = 1900
-        if pulse_width < 1100:
-            pulse_width = 1100
+        if pulse_width > 1700: # 1900
+            pulse_width = 1700
+        if pulse_width < 1300: # 1100
+            pulse_width = 1300
 
         return int(pulse_width)
 
+
+
+def subscriber(self):
+        qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+
+        self.subjoy = self.create_subscription(Joy, "joy", self.joyCallback, qos_profile=qos_profile)
+        self.subjoy  # prevent unused variable warning
+        self.subcmdvel = self.create_subscription(Twist, "cmd_vel", self.velCallback, qos_profile=qos_profile)
+        self.subcmdvel  # prevent unused variable warning
+ 
+        self.get_logger().info("Subscriptions done.")
 
 def main(args=None):
     rclpy.init(args=args)
