@@ -14,12 +14,7 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
 class UnderwaterDetectionNode(Node):
-    """
-    Detects:
-    1. Two ArUco markers on pool floor (for localization)
-    2. Red box (target object)
-    3. Handle on box (optional)
-    """
+
 
     def __init__(self):
         super().__init__("underwater_detection_node")
