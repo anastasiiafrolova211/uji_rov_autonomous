@@ -12,15 +12,16 @@ def generate_launch_description():
                 'port': 5600,
                 'enable_detection': True,
                 
-                # ArUco markers - 4x4 dictionary
-                'aruco_dict': 'DICT_4X4_50',        # 4x4 pattern
-                'floor_marker_ids': [10, 20],       # Floor marker IDs
-                'box_marker_id': 42,                # Box marker (if different)
-                'marker_size': 0.10,                # 10cm = 0.10 meters (BLACK ARUCO ONLY)
+                # ArUco markers
+                'aruco_dict': 'DICT_4X4_50',
+                'floor_marker_ids': [10, 20],
+                'box_marker_id': 42,
+                'marker_size': 0.10,
                 
-                # Detection flags
-                'enable_box_detection': True,
-                'enable_handle_detection': True,
+                # YOLO model - YOUR PATH
+                'yolo_model_path': '/home/elex/uji_rov_autonomous/best_seg.pt',
+                'yolo_confidence': 0.5,
+                'enable_yolo_detection': True,
             }]
         ),
     ])
