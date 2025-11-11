@@ -9,13 +9,15 @@ setup.py
 ../../build/rov_black_box/rov_black_box.egg-info/top_level.txt
 ../../build/rov_black_box/rov_black_box.egg-info/zip-safe
 config/xbox.config.yaml
+launch/all_launch.launch.py
 launch/joystick.launch.py
 launch/mavros_rov.launch.py
+launch/post_mission.launch.py
 launch/video.launch.py
 resource/rov_black_box
 rov_black_box/__init__.py
-rov_black_box/joy_debug.py
 rov_black_box/joystick_node.py
+rov_black_box/post_mission_node.py
 rov_black_box/track_box_node.py
 rov_black_box/video_node.py
 rov_black_box.egg-info/PKG-INFO

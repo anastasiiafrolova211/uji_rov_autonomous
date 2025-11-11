@@ -14,8 +14,8 @@ def generate_launch_description():
         GroupAction([
             Node(
                 package = 'rov_black_box',
-                executable = 'data_processing_node',
-                name = 'data_processing_node',
+                executable = 'post_mission_node',
+                name = 'post_mission_node',
                 namespace = namespace,
                 output = 'screen'
             )
