@@ -6,7 +6,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    namespace = LaunchConfiguration('namespace')
+    # MAVROS connection and config parameters
     fcu_url = LaunchConfiguration('fcu_url')
     gcs_url = LaunchConfiguration('gcs_url')
     tgt_system = LaunchConfiguration('tgt_system')
@@ -15,28 +15,27 @@ def generate_launch_description():
     fcu_protocol = LaunchConfiguration('fcu_protocol')
     respawn_mavros = LaunchConfiguration('respawn_mavros')
 
-    # Path to mavros launch file
+    # Paths to MAVROS built-in launch and config files
     mavros_launch = PathJoinSubstitution([
         FindPackageShare('mavros'),
         'launch',
-        'node.launch'  # or 'mavros.launch.py' depending on your version
+        'node.launch'  # MAVROS node launcher for ROS2 Humble
     ])
-    
-    # Path to config files
+
     pluginlists_yaml = PathJoinSubstitution([
         FindPackageShare('mavros'),
         'launch',
         'apm_pluginlists.yaml'
     ])
-    
+
     config_yaml = PathJoinSubstitution([
         FindPackageShare('mavros'),
         'launch',
         'apm_config.yaml'
     ])
 
+    # Create launch description
     return LaunchDescription([
-        DeclareLaunchArgument('namespace', default_value='bluerov2'),
         DeclareLaunchArgument('fcu_url', default_value='udp://192.168.2.1:14550@192.168.2.2'),
         DeclareLaunchArgument('gcs_url', default_value='udp://@127.0.0.1'),
         DeclareLaunchArgument('tgt_system', default_value='1'),
@@ -45,6 +44,7 @@ def generate_launch_description():
         DeclareLaunchArgument('fcu_protocol', default_value='v2.0'),
         DeclareLaunchArgument('respawn_mavros', default_value='false'),
 
+        # Include the MAVROS node.launch with our arguments
         IncludeLaunchDescription(
             AnyLaunchDescriptionSource(mavros_launch),
             launch_arguments={
@@ -57,7 +57,6 @@ def generate_launch_description():
                 'log_output': log_output,
                 'fcu_protocol': fcu_protocol,
                 'respawn_mavros': respawn_mavros,
-                'namespace': namespace,
             }.items(),
         ),
     ])

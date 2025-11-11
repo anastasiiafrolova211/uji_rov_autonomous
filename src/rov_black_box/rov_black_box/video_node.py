@@ -10,7 +10,7 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
 class VideoNode(Node):
-    """BlueRov video capture class constructor"""
+    """BlueROV video capture node for full resolution recording"""
 
     def __init__(self):
         super().__init__("video_node")
@@ -26,16 +26,14 @@ class VideoNode(Node):
 
         self.video_pipe         = None
         self.video_sink         = None
-        self.font               = cv2.FONT_HERSHEY_PLAIN
 
         Gst.init() 
 
         # Initialize CvBridge
         self.bridge = CvBridge()
 
-        # Create publisher for the image (namespace-relative)
+        # Create publisher for full resolution image
         self.image_publisher = self.create_publisher(Image, 'camera/image_raw', 10)
-        # Will become /bluerov2/camera/image_raw with namespace
 
         self.run()
 
@@ -43,7 +41,7 @@ class VideoNode(Node):
         self.create_timer(0.033, self.update)
 
         self.get_logger().info(f"Video node started on port {self.port}")
-        self.get_logger().info("Publishing to camera/image_raw")
+        self.get_logger().info("Publishing full 1920x1080 resolution to camera/image_raw")
 
     def start_gst(self, config=None):
         """Start gstreamer pipeline and sink"""
@@ -102,21 +100,23 @@ class VideoNode(Node):
         if not self.frame_available():
             return
 
+        # Get the full resolution frame
         frame = self.frame()
-        width = int(1920/2)
-        height = int(1080/2)
-        dim = (width, height)
-        img = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)   
-
-        # Publish image with timestamp
-        img_msg = self.bridge.cv2_to_imgmsg(img, encoding='bgr8')
+        
+        # Publish full resolution image with timestamp
+        img_msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
         img_msg.header.stamp = self.get_clock().now().to_msg()
         img_msg.header.frame_id = 'camera_frame'
         
         self.image_publisher.publish(img_msg)
 
-        # Show window
-        cv2.imshow('BlueROV2 Camera', img)
+        # Optional: Display downscaled preview window (doesn't affect published topic)
+        width = int(1920/2)
+        height = int(1080/2)
+        dim = (width, height)
+        display_img = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
+        
+        cv2.imshow('BlueROV2 Camera Preview', display_img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             self.get_logger().info("Quit requested")
             self.destroy_node()

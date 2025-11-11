@@ -49,7 +49,9 @@ class CameraCalibration(Node):
         
         Gst.init()
         self.run()
-        self.create_timer(0.1, self.calibrate)
+        
+        # Run calibration loop at ~30 Hz to match camera
+        self.create_timer(0.033, self.calibrate)
         
         self.get_logger().info(f"Camera Calibration Node Started")
         self.get_logger().info(f"Need {self.calibration_frames_needed} frames with visible checkerboard")
@@ -104,19 +106,26 @@ class CameraCalibration(Node):
             return
 
         frame = self._frame.copy()
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Get frame dimensions
         height, width = frame.shape[:2]
         
-        # Find checkerboard corners
-        ret, corners = cv2.findChessboardCorners(gray, (self.cols, self.rows), None)
+        # Downsample for faster detection (4x speedup)
+        scale_factor = 0.5  # Process at half resolution
+        small_frame = cv2.resize(frame, None, fx=scale_factor, fy=scale_factor, 
+                                 interpolation=cv2.INTER_LINEAR)
+        gray_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
+        
+        # Find checkerboard corners on smaller image (much faster)
+        ret, corners = cv2.findChessboardCorners(gray_small, (self.cols, self.rows), None)
         
         display_frame = frame.copy()
         
         if ret:
-            # Refine corner positions
-            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), self.criteria)
+            # Scale corners back to full resolution
+            corners_full = corners * (1.0 / scale_factor)
+            
+            # Refine corners at full resolution for accuracy
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            corners2 = cv2.cornerSubPix(gray, corners_full, (11, 11), (-1, -1), self.criteria)
             
             # Draw checkerboard
             cv2.drawChessboardCorners(display_frame, (self.cols, self.rows), corners2, ret)
@@ -126,6 +135,7 @@ class CameraCalibration(Node):
             cv2.putText(display_frame, "Press SPACE to capture", (10, 60),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
         else:
+            corners2 = None
             cv2.putText(display_frame, "Checkerboard NOT DETECTED", (10, 30),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv2.putText(display_frame, "Point camera at checkerboard", (10, 60),
@@ -164,17 +174,33 @@ class CameraCalibration(Node):
         )
         
         if ret:
+            # Calculate mean reprojection error for quality check
+            mean_error = 0
+            for i in range(len(self.objpoints)):
+                imgpoints2, _ = cv2.projectPoints(self.objpoints[i], rvecs[i], 
+                                                 tvecs[i], camera_matrix, dist_coeffs)
+                error = cv2.norm(self.imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
+                mean_error += error
+            
+            mean_error = mean_error / len(self.objpoints)
+            
             self.get_logger().info("Calibration successful!")
-            self.get_logger().info(f"Re-projection error: {ret}")
+            self.get_logger().info(f"Mean reprojection error: {mean_error:.4f} pixels")
+            
+            # Warn if error is too high
+            if mean_error > 1.0:
+                self.get_logger().warn("Reprojection error > 1 pixel - consider recalibrating!")
             
             # Save calibration
             calibration_data = {
                 'camera_matrix': camera_matrix,
-                'dist_coeffs': dist_coeffs
+                'dist_coeffs': dist_coeffs,
+                'reprojection_error': mean_error
             }
             
             # Save to file
             calib_file = os.path.expanduser('~/uji_rov_autonomous/camera_calibration.pkl')
+            os.makedirs(os.path.dirname(calib_file), exist_ok=True)
             with open(calib_file, 'wb') as f:
                 pickle.dump(calibration_data, f)
             
@@ -184,21 +210,24 @@ class CameraCalibration(Node):
             print("\n" + "="*60)
             print("CAMERA CALIBRATION RESULTS")
             print("="*60)
+            print(f"\nMean Reprojection Error: {mean_error:.4f} pixels")
             print("\nCamera Matrix:")
             print(camera_matrix)
             print("\nDistortion Coefficients:")
             print(dist_coeffs.flatten())
             print("\nPython code for your video_node.py:")
             print("="*60)
-            print(f"self.camera_matrix = np.array([")
+            print("self.camera_matrix = np.array([")
             print(f"    [{camera_matrix[0,0]:.1f}, {camera_matrix[0,1]:.1f}, {camera_matrix[0,2]:.1f}],")
             print(f"    [{camera_matrix[1,0]:.1f}, {camera_matrix[1,1]:.1f}, {camera_matrix[1,2]:.1f}],")
             print(f"    [{camera_matrix[2,0]:.1f}, {camera_matrix[2,1]:.1f}, {camera_matrix[2,2]:.1f}]")
-            print(f"], dtype=np.float32)")
-            print(f"\nself.dist_coeffs = np.array([")
-            for i, coeff in enumerate(dist_coeffs.flatten()):
-                print(f"    {coeff:.6f},")
-            print(f"], dtype=np.float32).reshape(5, 1)")
+            print("], dtype=np.float32)")
+            print("\nself.dist_coeffs = np.array([", end="")
+            dist_list = []
+            for coeff in dist_coeffs.flatten():
+                dist_list.append(f"{coeff:.6f}")
+            print(", ".join(dist_list), end="")
+            print("], dtype=np.float32).reshape(5, 1)")
             print("="*60 + "\n")
             
             cv2.destroyAllWindows()
@@ -206,6 +235,14 @@ class CameraCalibration(Node):
             rclpy.shutdown()
         else:
             self.get_logger().error("Calibration failed!")
+
+    def destroy_node(self):
+        """Cleanup"""
+        if self.video_pipe:
+            self.video_pipe.set_state(Gst.State.NULL)
+        cv2.destroyAllWindows()
+        super().destroy_node()
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -219,6 +256,7 @@ def main(args=None):
         cv2.destroyAllWindows()
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
