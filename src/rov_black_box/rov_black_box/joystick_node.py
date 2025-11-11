@@ -2,11 +2,9 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
-
 from mavros_msgs.srv import CommandLong
 from mavros_msgs.msg import MountControl
 from mavros_msgs.msg import OverrideRCIn
-from geometry_msgs.msg import Twist
 
 from time import sleep
 import numpy as np
@@ -17,20 +15,29 @@ class BlueROVJoystick(Node):
         super().__init__('bluerov_joystick_node')
         
         self.get_logger().info('Starting BlueROV joystick')
+        
+        # service clients created once so not to overload mavros
+        self.servo_client = self.create_client(CommandLong, 'cmd/command')
+        self.arm_client = self.servo_client  # same service for arming/disarming
+        
+        while not self.servo_client.wait_for_service(timeout_sec = 5.0): 
+                                                   # timeout value is taken from prev version of MIRListener
+            self.get_logger().info('Waiting for MAVROS CommandLong service...')
+
+
         # for thruster pwm commands
         self.pub_msg_override = self.create_publisher(OverrideRCIn, "rc/override", 10)
-        # subscribtion for joystick function
-        self.pub_angular_velocity = self.create_publisher(Twist, 'angular_velocity', 10)
-        self.pub_linear_velocity = self.create_publisher(Twist, 'linear_velocity', 10)
+
         # publish for camera tilting control
         self.mount_pub = self.create_publisher(MountControl, 'mount_control/command', 10)
+
+        # subscribt to Joy to implement control
+        self.subscription = self.create_subscription(Joy, 'joy', self.joyCallback, 10)
 
         # Create timer for continuous control (20 Hz)
         self.timer = self.create_timer(0.05, self.continuous_control_callback)
         
         self.armDisarm(False)
-
-        self.subscriber()
 
         # Button state tracking for continuous control
         self.lb_held = False  # Left bumper for tilt up
@@ -39,8 +46,9 @@ class BlueROVJoystick(Node):
         self.dpad_right_held = False  # D-pad right for brightening lights
 
         # initialize variables
-        self.set_mode = [True, False, False]
+        self.set_mode = [True, False, False] # [manual, auto, correction]
         self.arming = False
+        
         # for gropper control
         self.rt_was_pressed = False
         self.lt_was_pressed = False
@@ -79,40 +87,7 @@ class BlueROVJoystick(Node):
         self.gripper_min = 1150.0
         self.gripper_max = 1580.0
 
-        ## Initial test for the system
-        self.run_initialization_test = False  # changed to False to avoid blinding everyone around
-        if self.run_initialization_test:
-            self.initialization_test()
-
-
-    def initialization_test(self):
-        """
-        Tests the light by flashing it and tests the camera servo by moving it to max/min limits before starting the sytsem.
-        """
-        self.get_logger().info("Testing light and camera servo...")
         
-        # Flash the light
-        self.light = self.light_max
-        self.send_servo_command(self.light_pin, self.light)
-        sleep(0.5)
-        self.light = self.light_min
-        self.send_servo_command(self.light_pin, self.light)
-        sleep(0.5)
-        
-        # Move the camera servo to max and min
-        self.tilt = self.tilt_int
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
-        sleep(0.5)
-        self.tilt = self.servo_max
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
-        sleep(0.5)
-        self.tilt = self.servo_min
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
-        sleep(0.5)
-        self.tilt = self.tilt_int  # Reset camera tilt to neutral
-        self.send_servo_command(self.camera_servo_pin, self.tilt)
-
-
     def continuous_control_callback(self):
         """
         Timer callback for continuous camera tilt and light control when buttons are held
@@ -149,12 +124,7 @@ class BlueROVJoystick(Node):
         pin_number (float) --> the servo number in the navigator board
         value (float) --> The pwm value sent to the servo between 1100 and 1900
         '''
-        client = self.create_client(CommandLong, 'cmd/command')
-        
-        if not client.wait_for_service(timeout_sec=5.0):
-            self.get_logger().error('MAVROS service not available!')
-            return
-        
+
         # Set the parameters for the command (command 183: MAV_CMD_DO_SET_SERVO)
         request = CommandLong.Request()
         request.command = 183       # Command 183: MAV_CMD_DO_SET_SERVO
@@ -163,7 +133,7 @@ class BlueROVJoystick(Node):
         request.param3 = 0.0             
         request.param4 = 0.0    
 
-        client.call_async(request)
+        self.servo_client.call_async(request)
         self.get_logger().debug(f'Sent servo command pin {pin_number}, value {value}')
 
 
@@ -171,12 +141,7 @@ class BlueROVJoystick(Node):
         '''
         Arms or disarms the vehicle motors using MAVROS command 400.
         '''
-        cli = self.create_client(CommandLong, 'cmd/command')  # Create MAVROS service client
-        result = False
-        while not result:
-            result = cli.wait_for_service(timeout_sec=4.0)  # Wait for service to be available
-            self.get_logger().info(f"{'Arming' if armed else 'Disarming'} requested, waiting for service: {result}")
-        
+
         # Create request object for arming/disarming
         req = CommandLong.Request()
         req.broadcast = False   # Command is not broadcasted
@@ -191,7 +156,7 @@ class BlueROVJoystick(Node):
         req.param7 = 0.0 
         
         self.get_logger().info("Sending command...")
-        resp = cli.call_async(req)  # Send command asynchronously
+        resp = self.arm_client.call_async(req)  # Send command asynchronously
         
         self.get_logger().info(f"{'Arming' if armed else 'Disarming'} Succeeded")
 
@@ -211,7 +176,7 @@ class BlueROVJoystick(Node):
         msg.longitude = 0.0
 
         self.mount_pub.publish(msg)
-        self.get_logger().debug(f"Camera tilt: {tilt_angle_deg:.1f}°")
+        self.get_logger().debug(f"Camera tilt: {tilt_angle_deg:.1f}")
 
 
     def joyCallback(self, data):
@@ -295,13 +260,13 @@ def timer_callback(self):
         if self.set_mode[0]:  # commands sent inside joyCallback()
             self.correction_mode = False
             return
-        elif self.set_mode[
-            1]:  # Arbitrary velocity command can be defined here to observe robot's velocity, zero by default
+        elif self.set_mode[1]:  # Arbitrary velocity command can be defined here to observe robot's velocity, zero by default
             self.correction_mode = False
             self.setOverrideRCIN(1500, 1500, 1500, 1500, 1500, 1500)
             return
         elif self.set_mode[2]:
             if  not self.correction_mode:
+                self.Correction_depth = 1500
                 self.Correction_yaw = 1500
                 self.Correction_surge = 1500
                 self.depth_flag = False
@@ -324,12 +289,12 @@ def velCallback(self, cmd_vel):
         # Extract cmd_vel message
         roll_left_right = self.mapValueScalSat(cmd_vel.angular.x)
         yaw_left_right = self.mapValueScalSat(-cmd_vel.angular.z)
-        ascend_descend = self.mapValueScalSat(-cmd_vel.linear.z) # changed the sign
-        forward_reverse = self.mapValueScalSat(cmd_vel.linear.x)
+        ascend_descend = self.mapValueScalSat(cmd_vel.linear.z)
+        forward_reverse = self.mapValueScalSat(-cmd_vel.linear.x) # changed the direction
         lateral_left_right = self.mapValueScalSat(-cmd_vel.linear.y)
         pitch_left_right = self.mapValueScalSat(cmd_vel.angular.y)
         
-        # send the commands to the mthrusters 
+        # send the commands to the thrusters 
         self.setOverrideRCIN(pitch_left_right, roll_left_right, ascend_descend, yaw_left_right, forward_reverse,
                              lateral_left_right)
         
@@ -352,6 +317,7 @@ def setOverrideRCIN(self, channel_pitch, channel_roll, channel_throttle, channel
         msg_override.channels[7] = 1500 #camers tilt servo motro speed
 
         self.pub_msg_override.publish(msg_override)
+        self.get_logger().info(f"Published override values: {msg_override}")
 
 
 def mapValueScalSat(self, value):
@@ -362,26 +328,12 @@ def mapValueScalSat(self, value):
         # Saturation
         if pulse_width > 1700: # 1900
             pulse_width = 1700
-        if pulse_width < 1300: # 1100
-            pulse_width = 1300
+        if pulse_width < 1100:
+            pulse_width = 1100
 
         return int(pulse_width)
 
 
-
-def subscriber(self):
-        qos_profile = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1
-        )
-
-        self.subjoy = self.create_subscription(Joy, "joy", self.joyCallback, qos_profile=qos_profile)
-        self.subjoy  # prevent unused variable warning
-        self.subcmdvel = self.create_subscription(Twist, "cmd_vel", self.velCallback, qos_profile=qos_profile)
-        self.subcmdvel  # prevent unused variable warning
- 
-        self.get_logger().info("Subscriptions done.")
 
 def main(args=None):
     rclpy.init(args=args)
