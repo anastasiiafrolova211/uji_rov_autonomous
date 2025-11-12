@@ -39,9 +39,9 @@ class DataProcessing(Node):
         if not os.path.exists(self.log_file):
             with open(self.log_file, 'w') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Time', 'VisitedLandmark', 'Weight', 'CmdVelLinearX',
-                                 'CmdVelLinearZ', 'CmdVelAngularZ', 'Depth',
-                                 'DetectedTarget', 'Confidence'])
+                writer.writerow(['Time (in sec)', 'VisitedAruco', 'Weight', 
+                                 'CmdVelLinearX', 'CmdVelLinearZ', 'CmdVelAngularZ', 
+                                 'Depth', 'DetectedTarget', 'Confidence'])
 
         self.timer = self.create_timer(1.0, self.log_data)
 
@@ -71,9 +71,10 @@ class DataProcessing(Node):
             self.weight = 0
         self.visited_markers.add(self.current_landmark)
 
+# TODO
     def calculate_weight(self, from_landmark, to_landmark):
-        # Placeholder for graph theory weight calculation
-        # For now, just a fixed weight or customize as needed
+        # will use graph theory weight calculation Dijkstra algo (?)
+        # for now just fixed
         return 1
 
     def cmd_vel_callback(self, msg):
@@ -89,16 +90,16 @@ class DataProcessing(Node):
         self.confidence = msg.data
 
     def log_data(self):
-        current_time = (self.get_clock().now() - self.start_time).nanoseconds / 1e9
+        current_time = round( (self.get_clock().now() - self.start_time).nanoseconds / 1e9, 2)
 
-        visited_landmark = self.landmarks_dict.get(self.current_landmark, 'Unknown') if self.current_landmark else ''
+        visited_landmark = self.landmarks_dict.get(self.current_landmark, 'Unknown') if self.current_landmark else '-'
 
         linear_x = self.cmd_vel.linear.x if self.cmd_vel else 0.0
         linear_z = self.cmd_vel.linear.z if self.cmd_vel else 0.0
         angular_z = self.cmd_vel.angular.z if self.cmd_vel else 0.0
         depth = self.depth if self.depth else 0.0
         
-        detected_target = self.detected_target if self.detected_target is not None else ''
+        detected_target = self.detected_target if self.detected_target is not None else '-'
         confidence = self.confidence if self.confidence else 0.0
 
         with open(self.log_file, 'a') as f:
@@ -106,27 +107,24 @@ class DataProcessing(Node):
             writer.writerow([current_time, visited_landmark, self.weight, linear_x, linear_z, angular_z,
                              depth, detected_target, confidence])
 
-        self.get_logger().info(
-            f"Logged data: Time {current_time:.2f}s, Landmark {visited_landmark}, Weight {self.weight}, "
-            f"Target {detected_target}, Confidence {confidence:.2f}")
 
-
-def analyze_log(filename='mission_log.csv'):
-    visited_all = set()
-    times = []
-    if not os.path.exists(filename):
-        print(f"Log file {filename} does not exist.")
-        return
-    with open(filename, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            markers = row['VisitedLandmark'].split(';') if row['VisitedLandmark'] else []
-            visited_all.update(marker.strip() for marker in markers if marker)
-            times.append(float(row['Time']))
-    duration = times[-1] if times else 0.0
-    print(f"Mission Duration: {duration:.2f} seconds")
-    print(f"Total unique visited Landmarks: {len(visited_all)}")
-    print(f"Visited Landmarks: {visited_all}")
+# TODO full analysis after the mission
+# def analyze_log(filename='mission_log.csv'):
+#     visited_all = set()
+#     times = []
+#     if not os.path.exists(filename):
+#         print(f"Log file {filename} does not exist.")
+#         return
+#     with open(filename, 'r') as f:
+#         reader = csv.DictReader(f)
+#         for row in reader:
+#             markers = row['VisitedAruco'].split(';') if row['VisitedAruco'] else []
+#             visited_all.update(marker.strip() for marker in markers if marker)
+#             times.append(float(row['Time']))
+#     duration = times[-1] if times else 0.0
+#     print(f"Mission Duration: {duration:.2f} seconds")
+#     print(f"Total unique visited Arucos: {len(visited_all)}")
+#     print(f"Visited Aruco: {visited_all}")
 
 
 def main(args=None):
