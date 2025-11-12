@@ -16,7 +16,7 @@ def generate_launch_description():
         
         DeclareLaunchArgument(
             'port',
-            default_value='5600',
+            default_value='5602',
             description='UDP port for BlueROV video stream'
         ),
 

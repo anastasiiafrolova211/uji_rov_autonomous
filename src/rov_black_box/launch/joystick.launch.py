@@ -43,10 +43,8 @@ def generate_launch_description():
         # Group all nodes under the same namespace
         GroupAction(
             actions=[
-                # Push namespace to all nodes in this group
                 PushRosNamespace(namespace),
-                
-                # Joy node - reads gamepad input
+
                 Node(
                     package='joy',
                     executable='joy_node',
@@ -58,8 +56,28 @@ def generate_launch_description():
                         'autorepeat_rate': 50.0,
                     }]
                 ),
-                
-                # BlueROV teleop node - maps joy to RC override
+
+                Node(
+                    package='teleop_twist_joy',
+                    executable='teleop_node',
+                    name='teleop_twist_joy_node',
+                    output='screen',
+                    parameters=[{
+                        'axis_linear': {'x': 1, 'y': 0, 'z': 4},
+                        'scale_linear': {'x': 0.7, 'y': 0.7, 'z': 0.7},
+                        'scale_linear_turbo': {'x': 1.0, 'y': 1.0, 'z': 1.0},
+                        'axis_angular': {'yaw': 3, 'roll': 7, 'pitch': 6},
+                        'scale_angular': {'yaw': 0.4, 'roll': 0.2, 'pitch': 0.2},
+                        'require_enable_button': False,
+                        'enable_button': 2,
+                        'enable_turbo_button': 5,
+                    }],
+                    remappings=[
+                        ('joy', 'joy'),
+                        ('cmd_vel', 'cmd_vel'),
+                    ]
+                ),
+
                 Node(
                     package='rov_black_box',
                     executable='joystick_node',
@@ -71,7 +89,10 @@ def generate_launch_description():
                         'scale_linear': scale_linear,
                         'scale_vertical': scale_vertical,
                         'scale_yaw': scale_yaw,
-                    }]
+                    }],
+                    remappings=[
+                        ('cmd_vel', 'cmd_vel'),  # Subscribe to teleop velocity commands
+                    ]
                 ),
             ]
         )

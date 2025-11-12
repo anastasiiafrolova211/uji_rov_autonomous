@@ -15,7 +15,7 @@ class VideoNode(Node):
     def __init__(self):
         super().__init__("video_node")
 
-        self.declare_parameter("port", 5600) 
+        self.declare_parameter("port", 5602) 
 
         self.port               = self.get_parameter("port").value
         self._frame             = None

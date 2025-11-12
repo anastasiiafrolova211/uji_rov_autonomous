@@ -14,7 +14,7 @@ class CameraCalibration(Node):
     def __init__(self):
         super().__init__("camera_calibration")
         
-        self.declare_parameter("port", 5600)
+        self.declare_parameter("port", 5602)
         self.declare_parameter("checkerboard_rows", 6)
         self.declare_parameter("checkerboard_cols", 9)
         self.declare_parameter("square_size", 0.02)  # Size in meters (2cm)
