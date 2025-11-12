@@ -6,6 +6,8 @@ from geometry_msgs.msg import Twist
 import csv
 import os
 
+# even if teleoperating ? still do the cognitive map thingy ?
+ 
 class DataProcessing(Node):
     def __init__(self):
         super().__init__('post_mission_node')
@@ -39,11 +41,15 @@ class DataProcessing(Node):
         if not os.path.exists(self.log_file):
             with open(self.log_file, 'w') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Time (in sec)', 'VisitedAruco', 'Weight', 
+                writer.writerow(['Time (in sec)', 
+                                 'CurrentPosition', 'NextPosition', 'Weight', 
                                  'CmdVelLinearX', 'CmdVelLinearZ', 'CmdVelAngularZ', 
-                                 'Depth', 'DetectedTarget', 'Confidence'])
+                                 'Depth', 'DetectedTarget', 'Confidence', 
+                                 'IsPathChosen'])
 
-        self.timer = self.create_timer(1.0, self.log_data)
+        self.timer = self.create_timer(1.0, self.log_data) # log every 1.0 - better safe than sorry
+
+        self.is_path_chosen = False
 
     def subscriber(self):
         qos_profile = QoSProfile(
@@ -54,9 +60,10 @@ class DataProcessing(Node):
 
         
         # TODO cnahge all topic names here
-        self.cmd_vel_sub = self.create_subscription(Twist, '/turtle1/cmd_vel', self.cmd_vel_callback, qos_profile=qos_profile)
-        self.depth_sub = self.create_subscription(Float32, 'depth', self.depth_callback, qos_profile=qos_profile)
-        # from 
+        self.cmd_vel_sub = self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, qos_profile=qos_profile)
+        self.depth_sub = self.create_subscription(Float32, 'global_position/rel_alt', self.depth_callback, qos_profile=qos_profile)
+        
+        # from underwater_detection node 
         self.detected_target_sub = self.create_subscription(Int32, 'detected_target', self.detected_target_callback, qos_profile=qos_profile)
         self.confidence_sub = self.create_subscription(Float32, 'confidence', self.confidence_callback, qos_profile=qos_profile)
         self.aruco_sub = self.create_subscription(Int32, 'aruco_id', self.aruco_callback, qos_profile=qos_profile)
@@ -92,7 +99,8 @@ class DataProcessing(Node):
     def log_data(self):
         current_time = round( (self.get_clock().now() - self.start_time).nanoseconds / 1e9, 2)
 
-        visited_landmark = self.landmarks_dict.get(self.current_landmark, 'Unknown') if self.current_landmark else '-'
+        current_position = self.landmarks_dict.get(self.previous_landmark, 'Unknown') if self.previous_landmark else '-'
+        next_position = self.landmarks_dict.get(self.current_landmark, 'Unknown') if self.current_landmark else '-'
 
         linear_x = self.cmd_vel.linear.x if self.cmd_vel else 0.0
         linear_z = self.cmd_vel.linear.z if self.cmd_vel else 0.0
@@ -102,10 +110,13 @@ class DataProcessing(Node):
         detected_target = self.detected_target if self.detected_target is not None else '-'
         confidence = self.confidence if self.confidence else 0.0
 
+        is_path_chosen = self.is_path_chosen # still need to modify
+
         with open(self.log_file, 'a') as f:
             writer = csv.writer(f)
-            writer.writerow([current_time, visited_landmark, self.weight, linear_x, linear_z, angular_z,
-                             depth, detected_target, confidence])
+            writer.writerow([current_time, current_position, next_position, self.weight,
+                             linear_x, linear_z, angular_z, depth,
+                             detected_target, confidence, is_path_chosen])
 
 
 # TODO full analysis after the mission
