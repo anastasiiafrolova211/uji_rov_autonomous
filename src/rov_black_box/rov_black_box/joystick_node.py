@@ -30,7 +30,6 @@ class BlueROVJoystick(Node):
 
         # Service client
         self.cmd_client = self.create_client(CommandLong, '/mavros/cmd/command')
-        
         while not self.cmd_client.wait_for_service(timeout_sec=5.0):
             self.get_logger().info('Waiting for MAVROS CommandLong service...')
         
@@ -52,8 +51,8 @@ class BlueROVJoystick(Node):
         self.dpad_up_held = False
         self.dpad_down_held = False
 
-        # Camera servo pin
-        self.camera_servo_pin = 12.0  # Confirmed working
+        # Camera servo pin (already working)
+        self.camera_servo_pin = 12.0  
 
         # Camera tilt params
         self.tilt = 0.0
@@ -72,13 +71,14 @@ class BlueROVJoystick(Node):
         self.THRUSTER_SAFE_MIN = 1300
         self.THRUSTER_SAFE_MAX = 1700
         self.axis_deadzone = 0.05
+        self.axis_scale = 1.0  # FIXED: previously missing
 
-        # Modes for manual/autonomous (manual mode sends RC override)
+        # Modes
         self.set_mode = [True, False, False]  # manual, automatic, correction
         self.arming = False
         self.correction_mode = False
 
-        # Correction variables (for correction mode)
+        # Correction variables
         self.Correction_depth = self.PWM_CENTER
         self.Correction_yaw = self.PWM_CENTER
         self.Correction_surge = self.PWM_CENTER
@@ -87,7 +87,13 @@ class BlueROVJoystick(Node):
         self.latest_cmd_vel = Twist()
         self.have_cmd_vel = False
 
+        # Servo channel mapping (set these after checking /mavros/rc/out)
+        self.LIGHTS_CHANNEL = 9   # e.g. servo9 → index 8; adjust if needed
+        self.GRIPPER_CHANNEL = 10 # e.g. servo10 → index 9; adjust if needed
+
         self.get_logger().info("BlueROV joystick initialized with teleop twist support")
+
+    # ========== Core Callbacks ==========
 
     def state_callback(self, msg: State):
         self.last_state_time = self.get_clock().now()
@@ -108,7 +114,6 @@ class BlueROVJoystick(Node):
                 if mavros_timeout:
                     self.get_logger().error(f'FAILSAFE: MAVROS connection lost - STOPPING THRUSTERS')
                 self.failsafe_active = True
-            
             self.send_neutral_override()
         else:
             if self.failsafe_active:
@@ -119,10 +124,12 @@ class BlueROVJoystick(Node):
         msg = OverrideRCIn()
         msg.channels = [int(1500)] * 18
         self.override_pub.publish(msg)
-        
+
     def cmdvel_callback(self, cmd_vel: Twist):
         self.latest_cmd_vel = cmd_vel
         self.have_cmd_vel = True
+
+    # ========== Joystick Input ==========
 
     def joy_callback(self, data: Joy):
         self.last_joy_time = self.get_clock().now()
@@ -176,7 +183,7 @@ class BlueROVJoystick(Node):
             self.send_camera_tilt_command(self.tilt)
             self.get_logger().info("Camera tilt reset to 0")
 
-        # Gripper control on triggers (momentary)
+        # Gripper control on triggers
         rt_pressed = btn_gripper_close_axis < -0.5
         lt_pressed = btn_gripper_open_axis > 0.5
         
@@ -192,21 +199,20 @@ class BlueROVJoystick(Node):
             return
 
         if self.set_mode[0]:
-            # Manual mode - send RC override
+            # Manual mode - send RC override for thrusters
             surge_pwm = self.mapValueScalSat(data.axes[1])       # forward/back
             lateral_pwm = self.mapValueScalSat(-data.axes[0])    # left/right
-            yaw_pwm = self.mapValueScalSat(-data.axes[3])        # rotation left/right
-            
-            # Use velocity input for heave if available (auto depth hold)
+            yaw_pwm = self.mapValueScalSat(-data.axes[3])        # rotation
             if self.have_cmd_vel:
                 heave_pwm = self.mapValueScalSat(self.latest_cmd_vel.linear.z)
             else:
-                heave_pwm = self.mapValueScalSat(data.axes[4])  # fallback
+                heave_pwm = self.mapValueScalSat(data.axes[4])
 
             pitch_pwm = self.PWM_CENTER
             roll_pwm = self.PWM_CENTER
-
             self.setOverrideRCIN(pitch_pwm, roll_pwm, heave_pwm, yaw_pwm, surge_pwm, lateral_pwm)
+
+    # ========== Continuous Control ==========
 
     def continuous_control_callback(self):
         changed_tilt = False
@@ -232,21 +238,32 @@ class BlueROVJoystick(Node):
         if send_light_dimmer:
             self.send_lights_command(brighter=False)
 
+    # ========== Helper: RC Override for any channel ==========
+
+    def send_rc_channel_override(self, channel_number: int, pwm: int):
+        """Send a PWM override to a single RC channel (1–18)."""
+        if not (1 <= channel_number <= 18):
+            self.get_logger().error(f"Invalid RC channel number: {channel_number}")
+            return
+        msg = OverrideRCIn()
+        msg.channels = [65535] * 18
+        msg.channels[channel_number - 1] = max(self.PWM_MIN, min(self.PWM_MAX, int(pwm)))
+        self.override_pub.publish(msg)
+        self.get_logger().info(f"RC Override → channel {channel_number}: {pwm}")
+
+    # ========== Lights & Gripper (RC Override) ==========
+
     def send_lights_command(self, brighter=True):
-        req = CommandLong.Request()
-        req.command = 183
-        req.param1 = 11.0  # Light pin (change if needed)
-        req.param2 = 1900.0 if brighter else 1100.0
-        self.cmd_client.call_async(req)
-        self.get_logger().info(f'Lights command sent: {"brighter" if brighter else "dimmer"}')
+        pwm = 1900 if brighter else 1100
+        self.send_rc_channel_override(self.LIGHTS_CHANNEL, pwm)
+        self.get_logger().info(f"Lights {'brighter' if brighter else 'dimmer'} → PWM {pwm}")
 
     def send_gripper_command(self, open_gripper=True):
-        req = CommandLong.Request()
-        req.command = 183
-        req.param1 = 13.0  # Gripper pin (change if needed)
-        req.param2 = 1900.0 if open_gripper else 1100.0
-        self.cmd_client.call_async(req)
-        self.get_logger().info(f'Gripper command sent: {"open" if open_gripper else "close"}')
+        pwm = 1900 if open_gripper else 1100
+        self.send_rc_channel_override(self.GRIPPER_CHANNEL, pwm)
+        self.get_logger().info(f"Gripper {'open' if open_gripper else 'close'} → PWM {pwm}")
+
+    # ========== Camera Tilt (unchanged) ==========
 
     def send_camera_tilt_command(self, tilt_angle_deg: float):
         msg = MountControl()
@@ -264,6 +281,8 @@ class BlueROVJoystick(Node):
         req.param1 = self.camera_servo_pin
         req.param2 = 1500.0
         self.cmd_client.call_async(req)
+
+    # ========== Arming & RC Mapping ==========
 
     def arm_disarm(self, armed: bool):
         if not self.cmd_client.service_is_ready():
@@ -286,6 +305,8 @@ class BlueROVJoystick(Node):
         msg.channels[5] = int(self._clamp_pwm(lateral))
         self.override_pub.publish(msg)
 
+    # ========== Utility ==========
+
     def _clamp_pwm(self, pwm):
         try:
             pwm_i = int(pwm)
@@ -301,6 +322,8 @@ class BlueROVJoystick(Node):
         pwm = int(self.PWM_CENTER + value * self.axis_scale * (self.PWM_MAX - self.PWM_CENTER))
         pwm = max(self.PWM_MIN, min(self.PWM_MAX, pwm))
         return pwm
+
+# ========== Main ==========
 
 def main(args=None):
     rclpy.init(args=args)
