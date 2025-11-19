@@ -36,6 +36,7 @@ setup(
             'aruco_detector = rov_black_box.aruco_detector:main',
             'camera_calibration = rov_black_box.camera_calibration:main',
             'underwater_detection_node = rov_black_box.underwater_detection_node:main',
+            'visual_servo = rov_black_box.visual_servo:main',
 
         ],
     },
