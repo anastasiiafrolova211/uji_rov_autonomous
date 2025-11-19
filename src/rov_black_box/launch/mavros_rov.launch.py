@@ -28,9 +28,10 @@ def generate_launch_description():
         'apm_pluginlists.yaml'
     ])
 
+    # Correct path to your custom config file
     config_yaml = PathJoinSubstitution([
-        FindPackageShare('mavros'),
-        'launch',
+        FindPackageShare('rov_black_box'),
+        'config',
         'apm_config.yaml'
     ])
 

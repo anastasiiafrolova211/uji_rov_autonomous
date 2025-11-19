@@ -16,8 +16,10 @@ rov_black_box/camera_calibration.py
 rov_black_box/detector_node.py
 rov_black_box/joy_debug.py
 rov_black_box/joystick_node.py
+rov_black_box/launch_manager_node.py
 rov_black_box/underwater_detection_node.py
 rov_black_box/video_node.py
+rov_black_box/visual_servo.py
 rov_black_box.egg-info/PKG-INFO
 rov_black_box.egg-info/SOURCES.txt
 rov_black_box.egg-info/dependency_links.txt

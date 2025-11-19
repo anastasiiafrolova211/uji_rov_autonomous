@@ -13,21 +13,21 @@ def generate_launch_description():
             default_value='bluerov2',
             description='Namespace for the video node'
         ),
-        
         DeclareLaunchArgument(
             'port',
-            default_value='5602',
+            default_value='5600',
             description='UDP port for BlueROV video stream'
         ),
 
         Node(
-            package='rov_black_box',  # Replace with your actual package name
-            executable='video_node',    # Replace with your video node executable name
+            package='rov_black_box',
+            executable='video_node',
             name='video_node',
             namespace=namespace,
             output='screen',
             parameters=[{
-                'port': port
+                'port': port,
+                'show_window': True      # ensure GUI is enabled
             }]
         )
     ])

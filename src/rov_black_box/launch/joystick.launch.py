@@ -1,40 +1,32 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node
-from launch.substitutions import LaunchConfiguration
-
 
 def generate_launch_description():
-    # Launch configurations
-    joy_dev = LaunchConfiguration('joy_dev')
-    
     return LaunchDescription([
-        # Declare launch arguments
-        DeclareLaunchArgument(
-            'joy_dev',
-            default_value='/dev/input/js0',
-            description='Joystick device path'
-        ),
-
-        # Joy node - reads gamepad and publishes Joy messages
+        # Joystick driver -> publishes /joy
         Node(
             package='joy',
             executable='joy_node',
             name='joy_node',
             output='screen',
             parameters=[{
-                'dev': joy_dev,
+                'dev': '/dev/input/js1',
                 'deadzone': 0.05,
-                'autorepeat_rate': 50.0,
-            }]
+                'autorepeat_rate': 10.0,
+            }],
         ),
 
-        # Custom BlueROV joystick node with depth hold
+        # Your BlueROV joystick mapper -> subscribes to /joy, publishes RC override
         Node(
-            package='rov_black_box',  # Your package name
-            executable='joystick_node',  # Your node executable name
-            name='bluerov_joystick_depth_hold_node',
+            package='rov_black_box',
+            executable='joystick_node',
+            name='bluerov_joystick',
             output='screen',
+            parameters=[{
+                'light_pin': 12.0,
+                'gripper_pin': 10.0,
+                'camera_servo_pin': 16.0,
+            }],
         ),
     ])
 
