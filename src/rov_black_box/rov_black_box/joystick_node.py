@@ -8,16 +8,16 @@ from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
 from mavros_msgs.srv import CommandLong, SetMode
 from mavros_msgs.msg import OverrideRCIn, MountControl, State
-
+from std_msgs.msg import Bool # ADDED: Required for publishing the servo mode status
 
 class BlueROVJoystick(Node):
     def __init__(self):
         super().__init__('bluerov_joystick_node')
-        self.get_logger().info('Starting BlueROV joystick node (manual/auto + depth-hold + roll bumpers)')  # [web:388]
+        self.get_logger().info('Starting BlueROV joystick node (manual/auto + depth-hold + roll bumpers)')
 
         # ----------------- Parameters -----------------
-        self.declare_parameter('light_pin', 12.0)        # lights on pin 12 [web:388]
-        self.declare_parameter('gripper_pin', 10.0)      # gripper on pin 10 [web:388]
+        self.declare_parameter('light_pin', 12.0)
+        self.declare_parameter('gripper_pin', 10.0)
         self.declare_parameter('camera_servo_pin', 16.0)
 
         self.light_pin = float(self.get_parameter('light_pin').value)
@@ -25,31 +25,33 @@ class BlueROVJoystick(Node):
         self.camera_servo_pin = float(self.get_parameter('camera_servo_pin').value)
 
         # ----------------- Publishers -----------------
-        self.override_pub = self.create_publisher(OverrideRCIn, '/mavros/rc/override', 10)  # [web:355]
-        self.mount_pub = self.create_publisher(MountControl, '/mavros/mount_control/command', 10)  # [web:355]
+        self.override_pub = self.create_publisher(OverrideRCIn, '/mavros/rc/override', 10)
+        self.mount_pub = self.create_publisher(MountControl, '/mavros/mount_control/command', 10)
+        self.auto_mode_pub = self.create_publisher(Bool, '/rov/servo_mode_active', 10) # <--- ADDED PUBLISHER
 
         # ----------------- QoS & Subscribers -----------------
         qos_profile = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=5
-        )  # [web:706]
+        )
 
-        self.joy_sub = self.create_subscription(Joy, 'joy', self.joy_callback, qos_profile)  # [web:388]
-        self.cmdvel_sub = self.create_subscription(Twist, 'cmd_vel', self.vel_callback, qos_profile)  # [web:706]
-        self.state_sub = self.create_subscription(State, '/mavros/state', self.state_callback, 10)  # [web:355]
+        self.joy_sub = self.create_subscription(Joy, 'joy', self.joy_callback, qos_profile)
+        # We subscribe to 'cmd_vel' so the AUTOMATIC mode can read commands from the servo_controller.py
+        self.cmdvel_sub = self.create_subscription(Twist, 'cmd_vel', self.vel_callback, qos_profile)
+        self.state_sub = self.create_subscription(State, '/mavros/state', self.state_callback, 10)
 
         # ----------------- Services -----------------
-        self.cmd_client = self.create_client(CommandLong, '/mavros/cmd/command')  # [web:355]
+        self.cmd_client = self.create_client(CommandLong, '/mavros/cmd/command')
         while not self.cmd_client.wait_for_service(timeout_sec=5.0):
-            self.get_logger().info('Waiting for MAVROS CommandLong service...')  # [web:355]
+            self.get_logger().info('Waiting for MAVROS CommandLong service...')
 
-        self.set_mode_cli = self.create_client(SetMode, '/mavros/set_mode')  # [web:355]
+        self.set_mode_cli = self.create_client(SetMode, '/mavros/set_mode')
         while not self.set_mode_cli.wait_for_service(timeout_sec=2.0):
-            self.get_logger().info('Waiting for MAVROS SetMode service...')  # [web:355]
+            self.get_logger().info('Waiting for MAVROS SetMode service...')
 
         # ----------------- Timers -----------------
-        self.timer = self.create_timer(0.05, self.continuous_control_callback)  # [web:706]
+        self.timer = self.create_timer(0.05, self.continuous_control_callback)
 
         # ----------------- Button / control state -----------------
         self.dpad_left_held = False
@@ -87,66 +89,66 @@ class BlueROVJoystick(Node):
 
         self.axis_deadzone = 0.15
         self.axis_expo = 0.5
-        self.scale_surge = 0.40
-        self.scale_lateral = 0.40
-        self.scale_yaw = 0.30
+        self.scale_surge = 0.30
+        self.scale_lateral = 0.25
+        self.scale_yaw = 0.20
         self.scale_heave = 0.30
-        self.scale_roll = 0.35   # roll magnitude for bumper buttons [web:388]
+        self.scale_roll = 0.35   # roll magnitude for bumper buttons
 
         # Control modes: [manual, automatic]
-        self.set_mode = [True, False]   # start in MANUAL [web:388]
+        self.set_mode = [True, False]    # start in MANUAL
         self.arming = False
 
         # Depth-hold state
         self.depth_hold = False
         self.prev_depth_hold_btn = 0
         self.depth_hold_settle_until = None
-        self.depth_hold_settle_duration = 1.0  # seconds of neutral heave after ALT_HOLD [web:387]
+        self.depth_hold_settle_duration = 1.0  # seconds of neutral heave after ALT_HOLD
 
         self.latest_cmd_vel = Twist()
         self.have_cmd_vel = False
 
-        self.get_logger().info('BlueROV joystick initialized.')  # [web:387]
+        self.get_logger().info('BlueROV joystick initialized.')
 
     # ----------------- MAVROS helpers -----------------
 
     def state_callback(self, msg: State):
-        # For diagnostics if needed [web:355]
+        # For diagnostics if needed
         pass
 
     def set_flight_mode(self, mode_str: str):
         if not self.set_mode_cli.service_is_ready():
-            return  # [web:355]
+            return
         req = SetMode.Request()
         req.base_mode = 0
         req.custom_mode = mode_str
-        self.set_mode_cli.call_async(req)  # [web:355]
+        self.set_mode_cli.call_async(req)
 
     def send_neutral_override(self):
         msg_override = OverrideRCIn()
         msg_override.channels = [int(self.PWM_CENTER)] * 18
-        self.override_pub.publish(msg_override)  # [web:355]
+        self.override_pub.publish(msg_override)
 
     # ----------------- Joystick callback -----------------
 
     def joy_callback(self, data: Joy):
-        # Buttons (Xbox-style mapping) [web:388]
+        # Buttons (Xbox-style mapping)
         btn_arm = data.buttons[7]
         btn_disarm = data.buttons[6]
-        btn_manual_mode = data.buttons[3]
-        btn_automatic_mode = data.buttons[2]
+        btn_manual_mode = data.buttons[3]   # Y button
+        btn_automatic_mode = data.buttons[2] # X button (used for auto-mode toggle)
         btn_depth_hold_mode = data.buttons[0]
         btn_camera_rest = data.buttons[9]
 
         # New: bumpers for roll
-        btn_roll_left = data.buttons[4]   # LB
-        btn_roll_right = data.buttons[5]  # RB
+        btn_roll_left = data.buttons[4]    # LB
+        btn_roll_right = data.buttons[5]   # RB
 
-        btn_gripper_open_axis = data.axes[2]   # LT [web:388]
-        btn_gripper_close_axis = data.axes[5]  # RT [web:388]
+        btn_gripper_open_axis = data.axes[2]    # LT
+        btn_gripper_close_axis = data.axes[5]   # RT
 
-        btn_light = data.axes[6]               # D-pad left/right [web:388]
-        btn_camera_tilt = data.axes[7]         # D-pad up/down [web:388]
+        btn_light = data.axes[6]                # D-pad left/right
+        btn_camera_tilt = data.axes[7]          # D-pad up/down
 
         self.dpad_left_held = btn_light == 1.0
         self.dpad_right_held = btn_light == -1.0
@@ -157,41 +159,47 @@ class BlueROVJoystick(Node):
         if btn_disarm == 1 and self.arming:
             self.get_logger().info("Disarm requested.")
             self.arming = False
-            self.arm_disarm(False)  # [web:387]
+            self.arm_disarm(False)
         if btn_arm == 1 and not self.arming:
             self.get_logger().info("Arm requested.")
             self.arming = True
-            self.arm_disarm(True)   # [web:387]
+            self.arm_disarm(True)
 
         # Manual / automatic mapping
         if btn_manual_mode and not self.set_mode[0]:
             self.set_mode = [True, False]
-            self.get_logger().info("Switched to MANUAL control (joystick → RC).")  # [web:388]
+            self.get_logger().info("Switched to MANUAL control (joystick → RC).")
+            # --- PUBLISH SERVO STATE ---
+            self.auto_mode_pub.publish(Bool(data=False)) # <--- PUBLISHED False
+            # ---------------------------
         elif btn_automatic_mode and not self.set_mode[1]:
             self.set_mode = [False, True]
-            self.get_logger().info("Switched to AUTOMATIC control (cmd_vel → RC).")  # [web:366]
+            self.get_logger().info("Switched to AUTOMATIC control (cmd_vel → RC).")
+            # --- PUBLISH SERVO STATE ---
+            self.auto_mode_pub.publish(Bool(data=True)) # <--- PUBLISHED True
+            # ---------------------------
 
         # Depth-hold toggle (FCU MANUAL <-> ALT_HOLD)
         if btn_depth_hold_mode == 1 and self.prev_depth_hold_btn == 0:
             if not self.depth_hold:
                 self.depth_hold = True
-                self.set_flight_mode('ALT_HOLD')  # [web:387]
+                self.set_flight_mode('ALT_HOLD')
                 self.depth_hold_settle_until = self.get_clock().now() + Duration(
                     seconds=self.depth_hold_settle_duration
                 )
-                self.get_logger().info("Depth Hold ON (ALT_HOLD), starting settle window.")  # [web:387]
+                self.get_logger().info("Depth Hold ON (ALT_HOLD), starting settle window.")
             else:
                 self.depth_hold = False
-                self.set_flight_mode('MANUAL')  # [web:387]
+                self.set_flight_mode('MANUAL')
                 self.depth_hold_settle_until = None
-                self.get_logger().info("Depth Hold OFF (MANUAL).")  # [web:387]
+                self.get_logger().info("Depth Hold OFF (MANUAL).")
         self.prev_depth_hold_btn = btn_depth_hold_mode
 
         # Camera tilt reset
         if btn_camera_rest == 1:
             self.tilt = 0.0
             self.send_camera_tilt_command(self.tilt)
-            self.get_logger().info("Camera tilt reset to 0 degrees")  # [web:388]
+            self.get_logger().info("Camera tilt reset to 0 degrees")
 
         # Gripper controls
         rt_pressed = btn_gripper_close_axis < -0.5
@@ -200,11 +208,11 @@ class BlueROVJoystick(Node):
         if rt_pressed and not self.rt_was_pressed and self.gripper < self.gripper_max:
             self.gripper = min(self.gripper + self.gripper_step, self.gripper_max)
             self.send_servo_command(self.gripper_pin, self.gripper)
-            self.get_logger().info(f"Gripper closing PWM: {self.gripper}")  # [web:388]
+            self.get_logger().info(f"Gripper closing PWM: {self.gripper}")
         if lt_pressed and not self.lt_was_pressed and self.gripper > self.gripper_min:
             self.gripper = max(self.gripper - self.gripper_step, self.gripper_min)
             self.send_servo_command(self.gripper_pin, self.gripper)
-            self.get_logger().info(f"Gripper opening PWM: {self.gripper}")  # [web:388]
+            self.get_logger().info(f"Gripper opening PWM: {self.gripper}")
 
         self.rt_was_pressed = rt_pressed
         self.lt_was_pressed = lt_pressed
@@ -231,8 +239,9 @@ class BlueROVJoystick(Node):
     # ----------------- cmd_vel + continuous control -----------------
 
     def vel_callback(self, cmd_vel: Twist):
+        # Stores the latest velocity command (published by servo_controller.py)
         self.latest_cmd_vel = cmd_vel
-        self.have_cmd_vel = True  # [web:706]
+        self.have_cmd_vel = True
 
     def continuous_control_callback(self):
         # DPAD lights and camera tilt
@@ -254,9 +263,9 @@ class BlueROVJoystick(Node):
             changed_light = True
 
         if changed_tilt:
-            self.send_camera_tilt_command(self.tilt)  # [web:388]
+            self.send_camera_tilt_command(self.tilt)
         if changed_light:
-            self.send_servo_command(self.light_pin, self.light)  # [web:388]
+            self.send_servo_command(self.light_pin, self.light)
 
         # MANUAL handled in joy_callback
         if self.set_mode[0]:
@@ -265,6 +274,7 @@ class BlueROVJoystick(Node):
         # AUTOMATIC: cmd_vel → RC override (roll neutral)
         if self.set_mode[1]:
             if not self.have_cmd_vel:
+                # If no command is received (e.g., servo node crashed), send neutral
                 self.setOverrideRCIN(
                     self.PWM_CENTER, self.PWM_CENTER, self.PWM_CENTER,
                     self.PWM_CENTER, self.PWM_CENTER, self.PWM_CENTER
@@ -288,17 +298,17 @@ class BlueROVJoystick(Node):
             )
 
             pitch_pwm = self.PWM_CENTER
-            roll_pwm = self.PWM_CENTER  # keep roll neutral in AUTO [web:387]
+            roll_pwm = self.PWM_CENTER  # keep roll neutral in AUTO
             self.setOverrideRCIN(pitch_pwm, roll_pwm, heave_pwm, yaw_pwm, surge_pwm, lateral_pwm)
             return
 
     # ----------------- Low-level helpers -----------------
 
     def _clamp_unit(self, v: float):
-        return max(-1.0, min(1.0, float(v)))  # [web:707]
+        return max(-1.0, min(1.0, float(v)))
 
     def _heave_pwm_from_axis(self, axis_val: float):
-        # Neutral heave during short settle window after entering ALT_HOLD [web:387]
+        # Neutral heave during short settle window after entering ALT_HOLD
         if self.depth_hold and self.depth_hold_settle_until is not None:
             now = self.get_clock().now()
             if now < self.depth_hold_settle_until:
@@ -308,7 +318,7 @@ class BlueROVJoystick(Node):
         return self.mapValueScalSat(axis_val, self.scale_heave)
 
     def send_servo_command(self, pin_number: float, value: float):
-        # MAV_CMD_DO_SET_SERVO (183) [web:348]
+        # MAV_CMD_DO_SET_SERVO (183)
         if not self.cmd_client.service_is_ready():
             return
         req = CommandLong.Request()
@@ -326,7 +336,7 @@ class BlueROVJoystick(Node):
 
     def send_camera_tilt_command(self, tilt_angle_deg: float):
         msg = MountControl()
-        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING [web:348]
+        msg.mode = 2  # MAV_MOUNT_MODE_MAVLINK_TARGETING
         msg.pitch = float(tilt_angle_deg)
         msg.roll = 0.0
         msg.yaw = 0.0
@@ -337,7 +347,7 @@ class BlueROVJoystick(Node):
         self.send_servo_command(self.camera_servo_pin, self.PWM_CENTER)
 
     def arm_disarm(self, armed: bool):
-        # MAV_CMD_COMPONENT_ARM_DISARM (400) [web:348][web:614]
+        # MAV_CMD_COMPONENT_ARM_DISARM (400)
         if not self.cmd_client.service_is_ready():
             return
         req = CommandLong.Request()
@@ -354,7 +364,7 @@ class BlueROVJoystick(Node):
         self.cmd_client.call_async(req)
 
     def setOverrideRCIN(self, channel_pitch, channel_roll, channel_throttle,
-                        channel_yaw, channel_forward, channel_lateral):
+                          channel_yaw, channel_forward, channel_lateral):
         msg_override = OverrideRCIn()
         msg_override.channels = [int(self.PWM_CENTER)] * 18
         msg_override.channels[0] = int(self._clamp_pwm(channel_pitch))
@@ -365,7 +375,7 @@ class BlueROVJoystick(Node):
         msg_override.channels[5] = int(self._clamp_pwm(channel_lateral))
         msg_override.channels[6] = int(self.PWM_CENTER)
         msg_override.channels[7] = int(self.PWM_CENTER)
-        self.override_pub.publish(msg_override)  # [web:355]
+        self.override_pub.publish(msg_override)
 
     def _clamp_pwm(self, pwm_value):
         try:
@@ -404,4 +414,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-

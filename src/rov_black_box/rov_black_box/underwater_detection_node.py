@@ -1,323 +1,165 @@
-#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-
 from sensor_msgs.msg import Image
-from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import Float32
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
 from ultralytics import YOLO
+import math
+import os
 
-
-class UnderwaterDetectionNode(Node):
+class HandleDetector(Node):
     def __init__(self):
-        super().__init__('underwater_detection')
+        super().__init__('handle_detector')
 
-        self.get_logger().info('Starting Underwater Detection Node...')
+        # --- ⚠️ CONFIGURATION: UPDATE THESE TWO PATHS ⚠️ ---
+        # 1. Path to your 'best.pt' file (uses the folder generated during training)
+        self.model_path = '/home/elex/mainproj/v8_seg/runs/segment/bluerov_handle_12802/weights/best.pt' 
+        # 2. The ROS topic publishing the image feed (e.g., from your camera or the video publisher)
+        self.camera_topic = '/camera/image_raw' 
+        # ----------------------------------------------------
 
-        # Parameters
-        # Set default to your namespaced topic if desired, or override via launch
-        self.declare_parameter('camera_topic', '/bluerov2/camera/image_raw')
-        self.declare_parameter('yolo_model_path', '/home/elex/uji_rov_autonomous/v8m_1280.pt')
-        self.declare_parameter('enable_aruco', True)
-        self.declare_parameter('enable_yolo', True)
-        self.declare_parameter('show_visualization', True)
-
-        # Class-specific confidences (tune for your case)
-        self.declare_parameter('box_conf_threshold', 0.5)
-        self.declare_parameter('handle_conf_threshold', 0.3)
-
-        # Get parameters
-        camera_topic = self.get_parameter('camera_topic').value
-        model_path = self.get_parameter('yolo_model_path').value
-        self.enable_aruco = bool(self.get_parameter('enable_aruco').value)
-        self.enable_yolo = bool(self.get_parameter('enable_yolo').value)
-        self.show_viz = bool(self.get_parameter('show_visualization').value)
-        self.box_conf = float(self.get_parameter('box_conf_threshold').value)
-        self.handle_conf = float(self.get_parameter('handle_conf_threshold').value)
-
-        # Initialize CV Bridge
-        self.bridge = CvBridge()
-
-        # Initialize YOLO model
-        self.yolo_model = None
-        if self.enable_yolo:
-            try:
-                self.yolo_model = YOLO(model_path)
-                self.get_logger().info(f'YOLO model loaded: {model_path}')
-            except Exception as e:
-                self.get_logger().error(f'Failed to load YOLO model: {e}')
-                self.enable_yolo = False
-
-        # Initialize ArUco detector
-        self.aruco_dict = None
-        self.aruco_params = None
-        if self.enable_aruco:
-            try:
-                if hasattr(cv2.aruco, "DetectorParameters"):
-                    self.aruco_params = cv2.aruco.DetectorParameters()
-                else:
-                    self.aruco_params = cv2.aruco.DetectorParameters_create()
-                self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-                self.get_logger().info('ArUco detector initialized')
-            except Exception as e:
-                self.get_logger().error(f'Failed to initialize ArUco: {e}')
-                self.enable_aruco = False
-
-        # Subscribers
-        self.image_sub = self.create_subscription(
+        self.conf_threshold = 0.5               # Minimum confidence to accept a detection
+        
+        # ROS Setup
+        self.subscription = self.create_subscription(
             Image,
-            camera_topic,
+            self.camera_topic,
             self.image_callback,
-            10
-        )
+            10)
+        self.bridge = CvBridge()
+        
+        # Publishers: Angle for Control Loop, Debug image for visualization
+        self.angle_pub = self.create_publisher(Float32, '/handle/angle', 10)
+        self.debug_pub = self.create_publisher(Image, '/handle/debug', 10)
 
-        # Publishers
-        self.image_pub = self.create_publisher(Image, 'detection/image', 10)
-        self.box_pose_pub = self.create_publisher(PoseStamped, 'box_pose', 10)
-        self.handle_pose_pub = self.create_publisher(PoseStamped, 'handle_pose', 10)
+        # Load YOLO Model
+        if not os.path.exists(self.model_path):
+             self.get_logger().error(f"FATAL: Model not found at: {self.model_path}")
+             rclpy.shutdown()
+             return
 
-        # Visualization
-        if self.show_viz:
-            try:
-                cv2.namedWindow('Underwater Detection', cv2.WINDOW_NORMAL)
-                cv2.resizeWindow('Underwater Detection', 800, 600)
-                test_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(test_img, 'Waiting for camera...', (150, 240),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.imshow('Underwater Detection', test_img)
-                cv2.waitKey(1)
-            except cv2.error as e:
-                self.get_logger().warn(f"OpenCV GUI not available: {e}")
-                self.show_viz = False
+        self.get_logger().info("Loading YOLOv8 Model...")
+        self.model = YOLO(self.model_path)
+        self.get_logger().info("✅ Model Loaded! Waiting for image feed...")
 
-        # FPS tracking
-        self.last_viz_time = self.get_clock().now()
-        self.frame_count = 0
-
-        # Temporal smoothing + last centers
-        self.last_box_pixel = None
-        self.last_handle_pixel = None
-        self.smoothing_alpha = 0.3
-
-        self.get_logger().info(f'Subscribed to image topic: {camera_topic}')
-        self.get_logger().info('Underwater Detection Node ready!')
-
-    # ------------- Callbacks -------------
-
-    def image_callback(self, msg: Image):
-        """Process incoming camera images."""
+    def image_callback(self, msg):
         try:
-            self.frame_count += 1
-
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            if self.frame_count == 1:
-                h, w = cv_image.shape[:2]
-                self.get_logger().info(f"First image received: {w}x{h}")
-
-            viz_image = cv_image.copy()
-
-            if self.enable_aruco and self.aruco_dict is not None:
-                try:
-                    self.detect_aruco(cv_image, viz_image)
-                except Exception as e:
-                    self.get_logger().error(f'ArUco detection error: {e}')
-                    self.enable_aruco = False
-
-            if self.enable_yolo and self.yolo_model is not None:
-                try:
-                    self.detect_yolo(cv_image, viz_image, msg.header)
-                except Exception as e:
-                    self.get_logger().error(f'YOLO detection error: {e}')
-                    self.enable_yolo = False
-
-            current_time = self.get_clock().now()
-            dt = (current_time - self.last_viz_time).nanoseconds / 1e9
-            fps = 1.0 / dt if dt > 0 else 0.0
-            self.last_viz_time = current_time
-
-            cv2.putText(viz_image, f'FPS: {fps:.1f}', (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.putText(viz_image, f'Frame: {self.frame_count}', (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-
-            if self.show_viz:
-                try:
-                    cv2.imshow('Underwater Detection', viz_image)
-                    key = cv2.waitKey(1) & 0xFF
-                    if key == ord('q'):
-                        self.get_logger().info('Quit requested')
-                        rclpy.shutdown()
-                except cv2.error as e:
-                    self.get_logger().warn(f"OpenCV imshow error: {e}")
-                    self.show_viz = False
-
-            try:
-                annotated_msg = self.bridge.cv2_to_imgmsg(viz_image, encoding='bgr8')
-                annotated_msg.header = msg.header
-                self.image_pub.publish(annotated_msg)
-            except Exception as e:
-                self.get_logger().error(f'Failed to publish image: {e}')
-
+            # Convert ROS Image -> OpenCV Image (NumPy array)
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except Exception as e:
-            self.get_logger().error(f'Image processing error: {e}')
+            self.get_logger().error(f"Img conversion failed: {e}")
+            return
 
-    # ------------- Detection helpers -------------
+        # 1. Run Inference on the GPU
+        results = self.model(cv_image, verbose=False, conf=self.conf_threshold)
+        result = results[0]
 
-    def detect_aruco(self, cv_image, viz_image):
-        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = cv2.aruco.detectMarkers(
-            gray,
-            self.aruco_dict,
-            parameters=self.aruco_params
-        )
+        annotated_frame = result.plot() 
+        
+        target_angle = 0.0
+        target_conf = 0.0
+        found_handle = False
 
-        if ids is not None:
-            cv2.aruco.drawDetectedMarkers(viz_image, corners, ids)
-            for i, marker_id in enumerate(ids.flatten()):
-                corner = corners[i][0]
-                center = corner.mean(axis=0).astype(int)
-                cv2.circle(viz_image, tuple(center), 5, (0, 0, 255), -1)
-                cv2.putText(viz_image, f'ArUco {marker_id}',
-                            (center[0] - 40, center[1] - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        # 2. Find the Target Handle and Process
+        if result.masks is not None:
+            # Iterate through detections to find the 'handle' (assuming class 1)
+            for i, cls_id in enumerate(result.boxes.cls):
+                if int(cls_id) == 1: # Class 1 (Handle)
+                    
+                    conf = float(result.boxes.conf[i])
+                    
+                    # Extract and resize mask data
+                    mask = result.masks.data[i].cpu().numpy() 
+                    mask = cv2.resize(mask, (cv_image.shape[1], cv_image.shape[0]))
+                    mask = (mask * 255).astype(np.uint8)
 
-    def detect_yolo(self, cv_image, viz_image, header):
-        """Detect and visualize objects; publish one stabilized box + handle per frame."""
-        results = self.yolo_model(cv_image, verbose=False)
+                    # 3. Calculate Angle using PCA
+                    angle_deg, center, axis_end = self.get_orientation(mask)
+                    
+                    target_angle = angle_deg
+                    target_conf = conf
+                    found_handle = True
 
-        best_box = None
-        best_box_conf = 0.0
+                    # --- VISUALIZATION: Draw the PCA Axis ---
+                    cv2.circle(annotated_frame, center, 8, (0, 0, 255), -1) # Center point
+                    cv2.line(annotated_frame, center, axis_end, (0, 255, 0), 4, cv2.LINE_AA) # Green Axis Line
+                    
+                    # Publish the angle to the control loop
+                    msg = Float32()
+                    msg.data = angle_deg
+                    self.angle_pub.publish(msg)
+                    
+                    break # Lock onto the first detected handle
 
-        handles = []  # collect all handle candidates
+        # 4. Draw HUD and Display Window
+        self.draw_hud(annotated_frame, found_handle, target_conf, target_angle)
+        cv2.imshow("BlueROV Vision Feed", annotated_frame)
+        cv2.waitKey(1) 
 
-        for result in results:
-            if result.boxes is None:
-                continue
-            boxes = result.boxes
+        # Publish debug topic
+        self.debug_pub.publish(self.bridge.cv2_to_imgmsg(annotated_frame, "bgr8"))
 
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
-                conf = float(box.conf[0])
-                cls = int(box.cls[0])
-                class_name = self.yolo_model.names[cls]
+    def get_orientation(self, mask):
+        """Calculates the angle of the object in the mask using PCA."""
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours: return 0.0, (0,0), (0,0)
 
-                # Draw all detections
-                if 'box' in class_name.lower():
-                    color = (255, 0, 0)
-                elif 'handle' in class_name.lower():
-                    color = (0, 255, 255)
-                else:
-                    color = (0, 255, 0)
+        c = max(contours, key=cv2.contourArea)
+        pts = c.reshape(-1, 2).astype(np.float64)
+        
+        if len(pts) < 2: return 0.0, (0,0), (0,0)
 
-                cv2.rectangle(viz_image, (x1, y1), (x2, y2), color, 2)
-                label = f'{class_name} {conf:.2f}'
-                label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-                cv2.rectangle(
-                    viz_image,
-                    (x1, y1 - label_size[1] - 10),
-                    (x1 + label_size[0], y1),
-                    color,
-                    -1
-                )
-                cv2.putText(viz_image, label, (x1, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        # PCA Computation
+        mean, eigenvectors, _ = cv2.PCACompute2(pts, mean=None)
+        cntr = (int(mean[0][0]), int(mean[0][1]))
+        
+        vx, vy = eigenvectors[0][0], eigenvectors[0][1]
+        angle_rad = math.atan2(vy, vx)
+        angle_deg = math.degrees(angle_rad)
+        
+        # Calculate end point for the line drawing
+        length = 150
+        p2 = (int(cntr[0] + vx * length), int(cntr[1] + vy * length))
+        
+        return angle_deg, cntr, p2
 
-                cx = (x1 + x2) // 2
-                cy = (y1 + y2) // 2
-                cv2.circle(viz_image, (cx, cy), 4, color, -1)
+    def draw_hud(self, img, found, conf, angle):
+        """Draws the Heads Up Display text box."""
+        overlay = img.copy()
+        cv2.rectangle(overlay, (10, 10), (350, 130), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.6, img, 0.4, 0, img)
 
-                # Select best box by confidence (simple)
-                if 'box' in class_name.lower():
-                    if conf < self.box_conf:
-                        continue
-                    if conf > best_box_conf:
-                        best_box_conf = conf
-                        best_box = (x1, y1, x2, y2, cx, cy)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        white = (255, 255, 255)
+        
+        if found:
+            color = (0, 255, 0) # Green
+            status = "LOCKED"
+            conf_text = f"Conf: {conf*100:.1f}%"
+            angle_text = f"Roll: {angle:.1f} deg"
+        else:
+            color = (0, 0, 255) # Red
+            status = "SEARCHING"
+            conf_text = "Conf: --"
+            angle_text = "Roll: --"
 
-                # Collect all handle candidates for tracking-based selection
-                elif 'handle' in class_name.lower():
-                    if conf < self.handle_conf:
-                        continue
-                    area = max(1, (x2 - x1) * (y2 - y1))
-                    handles.append((x1, y1, x2, y2, cx, cy, conf, area))
-
-        # Publish single BOX pose
-        if best_box is not None:
-            x1, y1, x2, y2, cx, cy = best_box
-            cx_s, cy_s = self.smooth_pixel(self.last_box_pixel, (cx, cy))
-            self.last_box_pixel = (cx_s, cy_s)
-            self.publish_pose(cx_s, cy_s, x2 - x1, y2 - y1, 'box', header)
-
-        # Publish single HANDLE pose using "closest to last center" tracking
-        if handles:
-            if self.last_handle_pixel is not None:
-                lx, ly = self.last_handle_pixel
-                # pick the handle whose center is closest to last center
-                best = min(
-                    handles,
-                    key=lambda h: (h[4] - lx) ** 2 + (h[5] - ly) ** 2
-                )
-            else:
-                # first acquisition: pick largest-area handle
-                best = max(handles, key=lambda h: h[7])
-
-            x1, y1, x2, y2, cx, cy, conf, area = best
-            cx_s, cy_s = self.smooth_pixel(self.last_handle_pixel, (cx, cy))
-            self.last_handle_pixel = (cx_s, cy_s)
-            self.publish_pose(cx_s, cy_s, x2 - x1, y2 - y1, 'handle', header)
-
-    # ------------- Utility + publishing -------------
-
-    def smooth_pixel(self, last, current):
-        if last is None:
-            return current
-        lx, ly = last
-        cx, cy = current
-        a = self.smoothing_alpha
-        sx = a * cx + (1.0 - a) * lx
-        sy = a * cy + (1.0 - a) * ly
-        return sx, sy
-
-    def publish_pose(self, x, y, w, h, class_key, header):
-        pose_msg = PoseStamped()
-        pose_msg.header = header
-        if not pose_msg.header.frame_id:
-            pose_msg.header.frame_id = 'camera_frame'
-
-        pose_msg.pose.position.x = float(x)
-        pose_msg.pose.position.y = float(y)
-        pose_msg.pose.position.z = float(h)
-
-        pose_msg.pose.orientation.w = 1.0
-        pose_msg.pose.orientation.x = 0.0
-        pose_msg.pose.orientation.y = 0.0
-        pose_msg.pose.orientation.z = 0.0
-
-        if class_key == 'box':
-            self.box_pose_pub.publish(pose_msg)
-        elif class_key == 'handle':
-            self.handle_pose_pub.publish(pose_msg)
-
-    def destroy_node(self):
-        if self.show_viz:
-            cv2.destroyAllWindows()
-        super().destroy_node()
-
+        cv2.putText(img, f"STATUS: {status}", (25, 50), font, 0.8, color, 2)
+        cv2.putText(img, conf_text, (25, 85), font, 0.7, white, 2)
+        cv2.putText(img, angle_text, (25, 115), font, 0.7, white, 2)
 
 def main(args=None):
     rclpy.init(args=args)
-    node = UnderwaterDetectionNode()
+    node = HandleDetector()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         node.destroy_node()
+        cv2.destroyAllWindows()
         rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
-

@@ -2,7 +2,6 @@
 aruco_detector = rov_black_box.aruco_detector:main
 camera_calibration = rov_black_box.camera_calibration:main
 joystick_node = rov_black_box.joystick_node:main
-launch_manager = rov_black_box.launch_manager_node:main
 underwater_detection_node = rov_black_box.underwater_detection_node:main
 video_node = rov_black_box.video_node:main
 visual_servo = rov_black_box.visual_servo:main
