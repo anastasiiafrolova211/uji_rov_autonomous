@@ -137,7 +137,7 @@ class BlueROVJoystick(Node):
         btn_disarm = data.buttons[6]
         btn_manual_mode = data.buttons[3]   # Y button
         btn_automatic_mode = data.buttons[2] # X button (used for auto-mode toggle)
-        btn_depth_hold_mode = data.buttons[0]
+        btn_depth_hold_mode = data.buttons[0] # A button for depth hold
         btn_camera_rest = data.buttons[9]
 
         # New: bumpers for roll

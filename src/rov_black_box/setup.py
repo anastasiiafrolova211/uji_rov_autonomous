@@ -37,7 +37,7 @@ setup(
             'camera_calibration = rov_black_box.camera_calibration:main',
             'underwater_detection_node = rov_black_box.underwater_detection_node:main',
             'visual_servo = rov_black_box.visual_servo:main',
-
+            'autonomous = rov_black_box.autonomous:main'
         ],
     },
 )
