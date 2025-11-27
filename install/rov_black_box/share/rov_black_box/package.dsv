@@ -1,9 +1,0 @@
-source;share/rov_black_box/hook/pythonpath.ps1
-source;share/rov_black_box/hook/pythonpath.dsv
-source;share/rov_black_box/hook/pythonpath.sh
-source;share/rov_black_box/hook/ament_prefix_path.ps1
-source;share/rov_black_box/hook/ament_prefix_path.dsv
-source;share/rov_black_box/hook/ament_prefix_path.sh
-source;../../build/rov_black_box/share/rov_black_box/hook/pythonpath_develop.ps1
-source;../../build/rov_black_box/share/rov_black_box/hook/pythonpath_develop.dsv
-source;../../build/rov_black_box/share/rov_black_box/hook/pythonpath_develop.sh
