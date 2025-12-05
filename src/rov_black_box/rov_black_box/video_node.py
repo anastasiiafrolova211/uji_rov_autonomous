@@ -20,19 +20,25 @@ class VideoNode(Node):
         # Parameters
         self.declare_parameter("port", 5600)
         self.declare_parameter("show_window", True)
+        self.declare_parameter("width", 1920)   # NEW: 1080p width
+        self.declare_parameter("height", 1080)  # NEW: 1080p height
+        
         self.port = int(self.get_parameter("port").value)
         self.show_window = bool(self.get_parameter("show_window").value)
+        self.width = int(self.get_parameter("width").value)
+        self.height = int(self.get_parameter("height").value)
 
         self._frame = None
 
         Gst.init(None)
 
+        # UPDATED: Added width/height constraints to force 1080p
         self.pipeline_str = (
             f"udpsrc port={self.port} "
             "! application/x-rtp, payload=96 "
             "! rtpjitterbuffer drop-on-latency=true "
             "! rtph264depay ! h264parse ! avdec_h264 "
-            "! videoconvert ! video/x-raw,format=BGR "
+            f"! videoconvert ! video/x-raw,format=BGR,width={self.width},height={self.height} "
             "! appsink name=appsink0 emit-signals=true sync=false max-buffers=1 drop=true"
         )
 
@@ -46,8 +52,8 @@ class VideoNode(Node):
         if self.show_window and self._gui_available():
             try:
                 cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-                placeholder = np.zeros((540, 960, 3), dtype=np.uint8)
-                cv2.putText(placeholder, 'Waiting for video...', (40, 280),
+                placeholder = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+                cv2.putText(placeholder, 'Waiting for video...', (self.width//2-200, self.height//2),
                             cv2.FONT_HERSHEY_SIMPLEX, 1.2, (180, 180, 180), 2)
                 cv2.imshow(self.window_name, placeholder)
                 cv2.waitKey(1)
@@ -59,6 +65,7 @@ class VideoNode(Node):
         self.create_timer(0.033, self.update)
 
         self.get_logger().info(f"Video node started on UDP port {self.port}")
+        self.get_logger().info(f"Resolution: {self.width}x{self.height} (1080p)")
         self.get_logger().info("Publishing camera/image_raw for teleop + autonomy")
 
     def start_gst(self):
@@ -141,8 +148,8 @@ class VideoNode(Node):
         if self.show_window and self._gui_available():
             try:
                 h, w = frame.shape[:2]
-                display_img = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
-                cv2.imshow(self.window_name, display_img)
+                # Display at native resolution (1080p)
+                cv2.imshow(self.window_name, frame)
                 cv2.waitKey(1)
             except cv2.error as e:
                 self.get_logger().warn(f"OpenCV preview error: {e}")

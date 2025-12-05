@@ -23,8 +23,8 @@ def generate_launch_description():
             name='bluerov_joystick',
             output='screen',
             parameters=[{
-                'light_pin': 12.0,
-                'gripper_pin': 10.0,
+                'light_pin': 11.0,
+                'gripper_pin': 13.0,
                 'camera_servo_pin': 16.0,
             }],
         ),

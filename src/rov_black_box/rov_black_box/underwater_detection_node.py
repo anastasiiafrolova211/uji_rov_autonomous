@@ -13,7 +13,6 @@ class HandleDetector(Node):
     def __init__(self):
         super().__init__('handle_detector')
 
-        # --- ⚠️ CONFIGURATION: UPDATE THESE TWO PATHS ⚠️ ---
         # 1. Path to your 'best.pt' file (uses the folder generated during training)
         self.model_path = '/home/elex/mainproj/v8_seg/runs/segment/bluerov_handle_12802/weights/best.pt' 
         # 2. The ROS topic publishing the image feed (e.g., from your camera or the video publisher)
