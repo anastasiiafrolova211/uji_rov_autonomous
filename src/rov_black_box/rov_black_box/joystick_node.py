@@ -93,8 +93,8 @@ class BlueROVJoystick(Node):
 
         # Gripper PWM
         self.gripper = 1150.0
-        self.gripper_min = 1150.0
-        self.gripper_max = 1580.0
+        self.gripper_min = 1100.0
+        self.gripper_max = 1700.0
         self.gripper_step = 430.0
 
         self.rt_was_pressed = False
@@ -111,7 +111,7 @@ class BlueROVJoystick(Node):
         self.axis_expo = 0.5
         self.scale_surge = 0.25
         self.scale_lateral = 0.25
-        self.scale_yaw = 0.15
+        self.scale_yaw = 0.20
         self.scale_heave = 0.35
         self.scale_roll = 0.30
 

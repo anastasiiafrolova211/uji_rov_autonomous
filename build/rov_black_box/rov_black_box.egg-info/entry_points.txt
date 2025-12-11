@@ -6,3 +6,4 @@ joystick_node = rov_black_box.joystick_node:main
 underwater_detection_node = rov_black_box.underwater_detection_node:main
 video_node = rov_black_box.video_node:main
 visual_servo = rov_black_box.visual_servo:main
+
