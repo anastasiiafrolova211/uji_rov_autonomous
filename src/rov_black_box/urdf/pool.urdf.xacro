@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<robot name="cirtesu" xmlns:xacro="http://ros.org/wiki/xacro">
+  <!-- Define a material with a texture -->
+  <material name="cirtesu_material">
+    <texture filename="$(find bluerov2_cirtesu_core)/resources/cirtesu/tank_tex.png"/>
+  </material>
+  <material name="poster_material">
+    <texture filename="$(find bluerov2_cirtesu_core)/resources/cirtesu/poster_pool_small_tex.png"/>
+  </material>
+
+  <!-- Define the base link with visual and collision elements -->
+  <link name="cirtesu_tank">
+    <!-- Visual element using vis.obj and the defined material -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://bluerov2_cirtesu_core/resources/cirtesu/cirtesu.dae" scale="1 1 1"/>
+      </geometry>
+      <material name="poster_material"/>
+    </visual>
+  </link>
+  
+  <!-- Define the rectangular link with visual element -->
+  <!-- <link name="poster_link">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/> -->
+       <!-- Adjust origin as needed -->
+      <!-- <geometry>
+        <box size="3.5 -7.5 0.1"/>
+      </geometry>
+      <material name="poster_material"/>
+    </visual>
+  </link> -->
+
+  <!-- Define a joint to connect the rectangular link to the base link -->
+  <!-- <joint name="poster_joint" type="fixed">
+    <parent link="cirtesu_tank"/>
+    <child link="poster_link"/>
+    <origin xyz="0 0 -5" rpy="0 0 1.5708"/> Adjust position as needed -->
+  <!-- </joint> -->
+</robot>
+

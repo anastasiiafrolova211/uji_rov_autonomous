@@ -1,0 +1,14 @@
+aruco_detector:
+  ros__parameters:
+    parent_frame: map
+    child_prefix: aruco_
+    publish_aruco_tfs: true
+    publish_aruco_markers: true
+    aruco_marker_topic: /aruco_map_markers
+
+    # arrays must be same length
+    aruco_ids: [1, 6, 5, 7, 4, 0, 8, 2, 3]
+    aruco_x:  [4.5, 4.5, 4.5, 1.5, 1.5, 1.5, -1.5, -1.5, -1.5]
+    aruco_y:  [3.0, 0.0, -3.0, 3.0, 0.0, -3.0, 3.0, 0.0, -3.0]
+    aruco_z:  [4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8]
+

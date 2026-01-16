@@ -1,214 +1,263 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-import cv2
-import gi
-import numpy as np
 
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst
+from geometry_msgs.msg import TransformStamped, PoseStamped
+from tf2_ros import TransformBroadcaster
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
-class ArUcoDetector(Node):
+from visualization_msgs.msg import Marker, MarkerArray
+
+
+class ArucoDetector(Node):
+    """
+    RViz visualization helper:
+    - ArUco map:
+        TF: parent_frame -> aruco_<id> (static)
+        MarkerArray: /aruco_map_markers (republished periodically)
+    - ROV placeholder:
+        TF: parent_frame -> rov/base_link (dynamic, optional)
+        Marker: /rov_marker (periodic)
+      driven by PoseStamped on /rov/pose (pose is assumed expressed in parent_frame).
+    """
+
     def __init__(self):
         super().__init__("aruco_detector")
-        self.get_logger().info("ArUco detector with size measurement started")
 
-        self.declare_parameter("port", 5600)
-        self.port = self.get_parameter("port").value
-        
-        self._frame = None
-        self.video_source = 'udpsrc port={}'.format(self.port)
-        self.video_codec = '! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264'
-        self.video_decode = '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert'
-        self.video_sink_conf = '! appsink emit-signals=true sync=false max-buffers=2 drop=true'
+        # ---- Basic params (with defaults) ----
+        self.declare_parameter("parent_frame", "map")
+        self.declare_parameter("child_prefix", "aruco_")
 
-        self.video_pipe = None
-        self.video_sink = None
+        self.declare_parameter("publish_aruco_tfs", True)
+        self.declare_parameter("publish_aruco_markers", True)
+        self.declare_parameter("aruco_marker_topic", "/aruco_map_markers")
 
-        # All ArUco dictionaries to try
-        self.dictionaries = [
-            "DICT_4X4_50", "DICT_4X4_100", "DICT_4X4_250", "DICT_4X4_1000",
-            "DICT_5X5_50", "DICT_5X5_100", "DICT_5X5_250", "DICT_5X5_1000",
-            "DICT_6X6_50", "DICT_6X6_100", "DICT_6X6_250", "DICT_6X6_1000",
-            "DICT_7X7_50", "DICT_7X7_100", "DICT_7X7_250", "DICT_7X7_1000",
-            "DICT_ARUCO_ORIGINAL", "DICT_APRILTAG_16h5", "DICT_APRILTAG_25h9",
-            "DICT_APRILTAG_36h10", "DICT_APRILTAG_36h11"
-        ]
+        # ---- IMPORTANT: declare array params with explicit types (avoid [] => BYTE_ARRAY) ----
+        # rclpy allows declaring parameter type via rclpy.Parameter.Type.* [web:301]
+        self.declare_parameter("aruco_ids", rclpy.Parameter.Type.INTEGER_ARRAY)
+        self.declare_parameter("aruco_x", rclpy.Parameter.Type.DOUBLE_ARRAY)
+        self.declare_parameter("aruco_y", rclpy.Parameter.Type.DOUBLE_ARRAY)
+        self.declare_parameter("aruco_z", rclpy.Parameter.Type.DOUBLE_ARRAY)
 
-        Gst.init()
-        self.run()
-        
-        # Timer for real-time detection
-        self.create_timer(0.1, self.detect_markers)
+        # ---- ROV placeholder ----
+        self.declare_parameter("publish_rov_tf", True)
+        self.declare_parameter("publish_rov_marker", True)
+        self.declare_parameter("rov_frame", "rov/base_link")
+        self.declare_parameter("rov_pose_topic", "/rov/pose")
+        self.declare_parameter("rov_marker_topic", "/rov_marker")
 
-    def start_gst(self, config=None):
-        if not config:
-            config = [
-                'videotestsrc ! decodebin',
-                '! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
-                '! appsink'
-            ]
-        command = ' '.join(config)
-        self.video_pipe = Gst.parse_launch(command)
-        self.video_pipe.set_state(Gst.State.PLAYING)
-        self.video_sink = self.video_pipe.get_by_name('appsink0')
+        # ---- Marker sizes + rates ----
+        self.declare_parameter("aruco_cube_xy", 0.10)
+        self.declare_parameter("aruco_cube_z", 0.02)
+
+        self.declare_parameter("rov_arrow_len", 0.6)
+        self.declare_parameter("rov_arrow_w", 0.15)
+        self.declare_parameter("rov_arrow_h", 0.15)
+
+        self.declare_parameter("aruco_marker_rate_hz", 1.0)
+        self.declare_parameter("rov_publish_rate_hz", 20.0)
+
+        # ---- Read params ----
+        self.parent_frame = str(self.get_parameter("parent_frame").value)
+        self.child_prefix = str(self.get_parameter("child_prefix").value)
+
+        self.publish_aruco_tfs = bool(self.get_parameter("publish_aruco_tfs").value)
+        self.publish_aruco_markers = bool(self.get_parameter("publish_aruco_markers").value)
+        self.aruco_marker_topic = str(self.get_parameter("aruco_marker_topic").value)
+
+        self.publish_rov_tf = bool(self.get_parameter("publish_rov_tf").value)
+        self.publish_rov_marker = bool(self.get_parameter("publish_rov_marker").value)
+        self.rov_frame = str(self.get_parameter("rov_frame").value)
+        self.rov_pose_topic = str(self.get_parameter("rov_pose_topic").value)
+        self.rov_marker_topic = str(self.get_parameter("rov_marker_topic").value)
+
+        self.aruco_cube_xy = float(self.get_parameter("aruco_cube_xy").value)
+        self.aruco_cube_z = float(self.get_parameter("aruco_cube_z").value)
+
+        self.rov_arrow_len = float(self.get_parameter("rov_arrow_len").value)
+        self.rov_arrow_w = float(self.get_parameter("rov_arrow_w").value)
+        self.rov_arrow_h = float(self.get_parameter("rov_arrow_h").value)
+
+        self.aruco_marker_rate_hz = float(self.get_parameter("aruco_marker_rate_hz").value)
+        self.rov_publish_rate_hz = float(self.get_parameter("rov_publish_rate_hz").value)
+
+        # ---- Read arrays (may be None if not set in YAML) ----
+        self.aruco_ids = self._as_list(self.get_parameter("aruco_ids").value)
+        self.aruco_x = self._as_list(self.get_parameter("aruco_x").value)
+        self.aruco_y = self._as_list(self.get_parameter("aruco_y").value)
+        self.aruco_z = self._as_list(self.get_parameter("aruco_z").value)
+
+        if not (len(self.aruco_ids) == len(self.aruco_x) == len(self.aruco_y) == len(self.aruco_z)):
+            self.get_logger().error(
+                f"Aruco arrays must have same length. "
+                f"ids={len(self.aruco_ids)} x={len(self.aruco_x)} y={len(self.aruco_y)} z={len(self.aruco_z)}"
+            )
+            self.aruco_ids = []
+            self.aruco_x = []
+            self.aruco_y = []
+            self.aruco_z = []
+
+        # ---- TF + publishers ----
+        self.tf_static = StaticTransformBroadcaster(self)  # static TF broadcaster [web:1]
+        self.tf_dyn = TransformBroadcaster(self)           # dynamic TF broadcaster [web:235]
+
+        self.aruco_marker_pub = self.create_publisher(MarkerArray, self.aruco_marker_topic, 10)
+        self.rov_marker_pub = self.create_publisher(Marker, self.rov_marker_topic, 10)
+
+        self.last_pose_msg: PoseStamped | None = None
+        self.create_subscription(PoseStamped, self.rov_pose_topic, self._pose_cb, 10)
+
+        # Publish static TFs once
+        if self.publish_aruco_tfs and self.aruco_ids:
+            self._publish_aruco_static_tfs()
+
+        # Timers (republish markers so RViz will see them reliably) [web:21]
+        if self.publish_aruco_markers:
+            period = 1.0 / max(self.aruco_marker_rate_hz, 0.01)
+            self.create_timer(period, self._publish_aruco_marker_array)
+
+        rov_period = 1.0 / max(self.rov_publish_rate_hz, 0.01)
+        self.create_timer(rov_period, self._publish_rov_outputs)
+
+        self.get_logger().info(f"parent_frame: {self.parent_frame}")
+        self.get_logger().info(f"ArUco count: {len(self.aruco_ids)} topic: {self.aruco_marker_topic}")
+        self.get_logger().info(f"ROV pose: {self.rov_pose_topic} -> rov frame: {self.rov_frame}")
 
     @staticmethod
-    def gst_to_opencv(sample):
-        buf = sample.get_buffer()
-        caps = sample.get_caps()
-        array = np.ndarray(
-            (
-                caps.get_structure(0).get_value('height'),
-                caps.get_structure(0).get_value('width'),
-                3
-            ),
-            buffer=buf.extract_dup(0, buf.get_size()), dtype=np.uint8)
-        return array
+    def _as_list(v):
+        if v is None:
+            return []
+        try:
+            return list(v)
+        except TypeError:
+            return []
 
-    def run(self):
-        self.start_gst([
-            self.video_source,
-            self.video_codec,
-            self.video_decode,
-            self.video_sink_conf
-        ])
-        self.video_sink.connect('new-sample', self.callback)
+    def _pose_cb(self, msg: PoseStamped):
+        self.last_pose_msg = msg
 
-    def callback(self, sink):
-        sample = sink.emit('pull-sample')
-        new_frame = self.gst_to_opencv(sample)
-        self._frame = new_frame
-        return Gst.FlowReturn.OK
+    def _publish_aruco_static_tfs(self):
+        now = self.get_clock().now().to_msg()
+        tfs = []
 
-    def frame_available(self):
-        return type(self._frame) != type(None)
+        for mid, x, y, z in zip(self.aruco_ids, self.aruco_x, self.aruco_y, self.aruco_z):
+            t = TransformStamped()
+            t.header.stamp = now
+            t.header.frame_id = self.parent_frame
+            t.child_frame_id = f"{self.child_prefix}{int(mid)}"
 
-    def measure_marker_size_pixels(self, corners):
-        """
-        Measure marker size in pixels (average of all 4 sides)
-        """
-        corner_points = corners[0]
-        
-        # Calculate distances between consecutive corners
-        distances = []
-        for i in range(4):
-            p1 = corner_points[i]
-            p2 = corner_points[(i + 1) % 4]
-            dist = np.linalg.norm(p2 - p1)
-            distances.append(dist)
-        
-        avg_size = np.mean(distances)
-        return avg_size
+            t.transform.translation.x = float(x)
+            t.transform.translation.y = float(y)
+            t.transform.translation.z = float(z)
 
-    def detect_markers(self):
-        if not self.frame_available():
-            return
+            t.transform.rotation.x = 0.0
+            t.transform.rotation.y = 0.0
+            t.transform.rotation.z = 0.0
+            t.transform.rotation.w = 1.0
 
-        frame = self._frame.copy()
-        
-        # Resize for display
-        width = int(1920/2)
-        height = int(1080/2)
-        dim = (width, height)
-        display_frame = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
+            tfs.append(t)
 
-        detected = False
-        detected_dict = None
-        all_corners = None
-        all_ids = None
+        self.tf_static.sendTransform(tfs)
 
-        # Try all dictionaries
-        for dict_name in self.dictionaries:
-            try:
-                aruco_dict = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
-                parameters = cv2.aruco.DetectorParameters()
-                corners, ids, _ = cv2.aruco.detectMarkers(display_frame, aruco_dict, parameters=parameters)
+    def _publish_aruco_marker_array(self):
+        now = self.get_clock().now().to_msg()
+        arr = MarkerArray()
 
-                if ids is not None and len(ids) > 0:
-                    detected = True
-                    detected_dict = dict_name
-                    all_corners = corners
-                    all_ids = ids
-                    break
-            except AttributeError:
-                continue
+        for mid, x, y, z in zip(self.aruco_ids, self.aruco_x, self.aruco_y, self.aruco_z):
+            mk = Marker()
+            mk.header.stamp = now
+            mk.header.frame_id = self.parent_frame
+            mk.ns = "aruco_map"
+            mk.id = int(mid)
 
-        if detected:
-            # Draw detected markers
-            cv2.aruco.drawDetectedMarkers(display_frame, all_corners, all_ids)
-            
-            # Display information for each marker
-            self.get_logger().info(f"Dictionary: {detected_dict}")
-            
-            for i, (corner, marker_id) in enumerate(zip(all_corners, all_ids)):
-                marker_id = marker_id[0]
-                
-                # Measure size in pixels
-                size_pixels = self.measure_marker_size_pixels(corner)
-                
-                # Get center of marker
-                center = corner[0].mean(axis=0).astype(int)
-                
-                # Draw info on frame
-                cv2.putText(display_frame, f"ID: {marker_id}", 
-                           (center[0] - 40, center[1] - 40),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                cv2.putText(display_frame, f"Size: {size_pixels:.1f}px", 
-                           (center[0] - 40, center[1] - 15),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-                
-                # Log the information
-                self.get_logger().info(
-                    f"Marker ID {marker_id}: {size_pixels:.1f} pixels"
-                )
-            
-            # Display dictionary name
-            cv2.putText(display_frame, f"Dict: {detected_dict}", (10, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            cv2.putText(display_frame, "Press 'S' to save measurements", (10, height - 20),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            mk.type = Marker.CUBE
+            mk.action = Marker.ADD
+
+            mk.pose.position.x = float(x)
+            mk.pose.position.y = float(y)
+            mk.pose.position.z = float(z)
+            mk.pose.orientation.w = 1.0
+
+            mk.scale.x = self.aruco_cube_xy
+            mk.scale.y = self.aruco_cube_xy
+            mk.scale.z = self.aruco_cube_z
+
+            mk.color.r = 1.0
+            mk.color.g = 0.4
+            mk.color.b = 0.0
+            mk.color.a = 0.9
+
+            arr.markers.append(mk)
+
+        self.aruco_marker_pub.publish(arr)
+
+    def _publish_rov_outputs(self):
+        now = self.get_clock().now().to_msg()
+
+        if self.last_pose_msg is None:
+            px = py = pz = 0.0
+            qx = qy = qz = 0.0
+            qw = 1.0
         else:
-            cv2.putText(display_frame, "No ArUco markers detected", (10, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            p = self.last_pose_msg.pose.position
+            q = self.last_pose_msg.pose.orientation
+            px, py, pz = p.x, p.y, p.z
+            qx, qy, qz, qw = q.x, q.y, q.z, q.w
 
-        cv2.imshow("ArUco Detection & Measurement", display_frame)
-        
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            self.get_logger().info("Quitting...")
-            self.destroy_node()
-            rclpy.shutdown()
-        elif key == ord('s') and detected:
-            # Save frame with measurements
-            timestamp = self.get_clock().now().to_msg()
-            filename = f"aruco_measurement_{timestamp.sec}.png"
-            cv2.imwrite(filename, display_frame)
-            self.get_logger().info(f"Saved measurement to {filename}")
-            
-            # Print measurement summary
-            self.get_logger().info("\n===== MEASUREMENT SUMMARY =====")
-            self.get_logger().info(f"Dictionary: {detected_dict}")
-            for i, (corner, marker_id) in enumerate(zip(all_corners, all_ids)):
-                size_px = self.measure_marker_size_pixels(corner)
-                self.get_logger().info(f"Marker {marker_id[0]}: {size_px:.1f} pixels")
-            self.get_logger().info("===============================\n")
+        if self.publish_rov_tf:
+            t = TransformStamped()
+            t.header.stamp = now
+            t.header.frame_id = self.parent_frame
+            t.child_frame_id = self.rov_frame
+
+            t.transform.translation.x = float(px)
+            t.transform.translation.y = float(py)
+            t.transform.translation.z = float(pz)
+
+            t.transform.rotation.x = float(qx)
+            t.transform.rotation.y = float(qy)
+            t.transform.rotation.z = float(qz)
+            t.transform.rotation.w = float(qw)
+
+            self.tf_dyn.sendTransform(t)
+
+        if self.publish_rov_marker:
+            mk = Marker()
+            mk.header.stamp = now
+            mk.header.frame_id = self.parent_frame
+            mk.ns = "rov"
+            mk.id = 0
+
+            mk.type = Marker.ARROW
+            mk.action = Marker.ADD
+
+            mk.pose.position.x = float(px)
+            mk.pose.position.y = float(py)
+            mk.pose.position.z = float(pz)
+            mk.pose.orientation.x = float(qx)
+            mk.pose.orientation.y = float(qy)
+            mk.pose.orientation.z = float(qz)
+            mk.pose.orientation.w = float(qw)
+
+            mk.scale.x = self.rov_arrow_len
+            mk.scale.y = self.rov_arrow_w
+            mk.scale.z = self.rov_arrow_h
+
+            mk.color.r = 0.1
+            mk.color.g = 0.3
+            mk.color.b = 1.0
+            mk.color.a = 0.9
+
+            self.rov_marker_pub.publish(mk)
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = ArUcoDetector()
-    
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cv2.destroyAllWindows()
-        node.destroy_node()
-        rclpy.shutdown()
+def main():
+    rclpy.init()
+    node = ArucoDetector()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 

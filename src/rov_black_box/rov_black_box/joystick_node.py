@@ -10,10 +10,11 @@ from mavros_msgs.srv import CommandLong, SetMode
 from mavros_msgs.msg import OverrideRCIn, MountControl, State
 from std_msgs.msg import Bool
 
+
 class BlueROVJoystick(Node):
     def __init__(self):
         super().__init__('bluerov_joystick_node')
-        self.get_logger().info('Starting BlueROV joystick node (manual/auto + depth-hold + roll bumpers)')
+        self.get_logger().info('Starting BlueROV joystick node (manual/auto + depth-hold + pitch bumpers)')
 
         # ----------------- Parameters -----------------
         self.declare_parameter('light_pin', 11.0)
@@ -55,8 +56,8 @@ class BlueROVJoystick(Node):
         self.joy_sub = self.create_subscription(Joy, 'joy', self.joy_callback, qos_profile)
         self.cmdvel_sub = self.create_subscription(Twist, 'cmd_vel', self.vel_callback, qos_profile)
         self.state_sub = self.create_subscription(State, '/mavros/state', self.state_callback, 10)
-        
-        # NEW: Subscribe to depth hold requests from visual servoing
+
+        # Subscribe to depth hold requests from visual servoing
         self.depth_hold_request_sub = self.create_subscription(
             Bool, '/rov/depth_hold_request', self.depth_hold_request_callback, 10
         )
@@ -95,7 +96,7 @@ class BlueROVJoystick(Node):
         self.gripper = 1150.0
         self.gripper_min = 1100.0
         self.gripper_max = 1700.0
-        self.gripper_step = 430.0
+        self.gripper_step = 500.0
 
         self.rt_was_pressed = False
         self.lt_was_pressed = False
@@ -109,11 +110,11 @@ class BlueROVJoystick(Node):
 
         self.axis_deadzone = 0.15      # used for manual joystick axes shaping
         self.axis_expo = 0.5
-        self.scale_surge = 0.25
-        self.scale_lateral = 0.25
+        self.scale_surge = 0.35
+        self.scale_lateral = 0.35
         self.scale_yaw = 0.20
         self.scale_heave = 0.35
-        self.scale_roll = 0.30
+        self.scale_pitch = 0.30  # bumpers now command pitch
 
         # Control modes: [manual, automatic]
         self.set_mode = [True, False]
@@ -130,8 +131,8 @@ class BlueROVJoystick(Node):
 
         self.get_logger().info('BlueROV joystick initialized.')
 
-    # ----------------- NEW: Depth hold request callback -----------------
-    
+    # ----------------- Depth hold request callback -----------------
+
     def depth_hold_request_callback(self, msg: Bool):
         """Handle depth hold requests from visual servoing node"""
         if msg.data and not self.depth_hold:
@@ -178,8 +179,9 @@ class BlueROVJoystick(Node):
         btn_depth_hold_mode = data.buttons[0]
         btn_camera_rest = data.buttons[9]
 
-        btn_roll_left = data.buttons[4]
-        btn_roll_right = data.buttons[5]
+        # Repurpose bumpers as pitch (formerly roll)
+        btn_pitch_up = data.buttons[4]     # LB
+        btn_pitch_down = data.buttons[5]   # RB
 
         btn_gripper_open_axis = data.axes[2]
         btn_gripper_close_axis = data.axes[5]
@@ -256,15 +258,18 @@ class BlueROVJoystick(Node):
             lateral_pwm = self.mapValueScalSat(-data.axes[0], self.scale_lateral)
             heave_pwm = self._heave_pwm_from_axis(data.axes[4])
 
-            roll_axis = 0.0
-            if btn_roll_left:
-                roll_axis += 1.0
-            if btn_roll_right:
-                roll_axis -= 1.0
-            roll_pwm = self.axis_to_pwm(roll_axis, self.scale_roll, self.axis_expo)
+            # Pitch from bumpers
+            pitch_axis = 0.0
+            if btn_pitch_up:
+                pitch_axis += 1.0
+            if btn_pitch_down:
+                pitch_axis -= 1.0
+            pitch_pwm = self.axis_to_pwm(pitch_axis, self.scale_pitch, self.axis_expo)
 
             yaw_pwm = self.mapValueScalSat(-data.axes[3], self.scale_yaw)
-            pitch_pwm = self.PWM_CENTER
+
+            # Roll disabled/neutral
+            roll_pwm = self.PWM_CENTER
 
             self.setOverrideRCIN(pitch_pwm, roll_pwm, heave_pwm, yaw_pwm, surge_pwm, lateral_pwm)
 
@@ -310,9 +315,7 @@ class BlueROVJoystick(Node):
                 )
                 return
 
-            # --- new automatic mapping: no deadzone, configurable gains ---
             # latest_cmd_vel.* are assumed to be in [-1,1] or small radians for angular.z
-            # we scale angular.z up with AUTO_SCALE_YAW before mapping
             yaw_val = float(self.latest_cmd_vel.angular.z) * self.AUTO_SCALE_YAW
             if self.AUTO_YAW_INVERT:
                 yaw_val = -yaw_val
@@ -331,8 +334,10 @@ class BlueROVJoystick(Node):
             lateral_pwm = self.map_cmd_to_pwm(lat_unit, scale=self.AUTO_SCALE_LATERAL)
             heave_pwm = self._heave_pwm_from_axis(heave_unit)  # keep existing heave path for depth hold compatibility
 
+            # Pitch and roll are neutral in auto
             pitch_pwm = self.PWM_CENTER
             roll_pwm = self.PWM_CENTER
+
             self.setOverrideRCIN(pitch_pwm, roll_pwm, heave_pwm, yaw_pwm, surge_pwm, lateral_pwm)
             return
 
@@ -397,9 +402,10 @@ class BlueROVJoystick(Node):
         self.cmd_client.call_async(req)
 
     def setOverrideRCIN(self, channel_pitch, channel_roll, channel_throttle,
-                          channel_yaw, channel_forward, channel_lateral):
+                        channel_yaw, channel_forward, channel_lateral):
         msg_override = OverrideRCIn()
         msg_override.channels = [int(self.PWM_CENTER)] * 18
+        # ArduSub default RC inputs: 1=Pitch, 2=Roll, 3=Throttle, 4=Yaw, 5=Forward, 6=Lateral
         msg_override.channels[0] = int(self._clamp_pwm(channel_pitch))
         msg_override.channels[1] = int(self._clamp_pwm(channel_roll))
         msg_override.channels[2] = int(self._clamp_pwm(channel_throttle))

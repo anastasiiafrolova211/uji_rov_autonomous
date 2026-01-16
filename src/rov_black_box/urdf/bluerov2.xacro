@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<robot name="bluerov2_heavy" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:arg name="prefix" default="bluerov/" />
+  
+  <!-- Import BlueROV2 macro -->
+  <xacro:include filename="$(find bluerov2_cirtesu_core)/urdf/bluerov2_heavy/urdf_payload.xacro" />
+  <xacro:bluerov2_heavy_urdf prefix="$(arg prefix)" />
+
+</robot>
